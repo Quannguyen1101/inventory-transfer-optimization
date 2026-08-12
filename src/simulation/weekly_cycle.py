@@ -1,13 +1,15 @@
 """UC-002 — thực thi một chu kỳ (tuần) trong rolling simulation."""
-from dataclasses import dataclass
-from datetime import date
+from dataclasses import dataclass, field
+from datetime import date, timedelta
 from typing import Literal
 
 import pandas as pd
 
+from src.config import CATEGORY_SHELF_LIFE_DAYS
 from src.forecasting.holt_winters_forecaster import HoltWintersForecaster
 from src.forecasting.naive_forecaster import NaiveForecaster
 from src.inventory_policy.classifier import StockPosition, StockStatus, classify_stock, classify_stock_baseline
+from src.inventory_policy.replenishment import compute_replenishment_order
 from src.inventory_policy.reorder_point import compute_reorder_point
 from src.inventory_policy.safety_stock import compute_safety_stock
 from src.optimization.constraints import Batch, TransferConstraints, TransferLine
@@ -23,6 +25,7 @@ class WeekResult:
     updated_batches: dict[tuple[int, int], list[Batch]]
     kpi: WeeklyKPI
     transfer_lines: list[TransferLine]
+    pending_replenishment: dict[tuple[int, int], float] = field(default_factory=dict)
 
 
 def run_week(
@@ -43,24 +46,31 @@ def run_week(
     min_inventory_days: float,
     max_inventory_days: float,
     ga_seed: int = 42,
+    incoming_replenishment: dict[tuple[int, int], float] | None = None,
 ) -> WeekResult:
+    incoming_replenishment = incoming_replenishment or {}
     constraints = TransferConstraints(vehicle_capacity_kg, vehicle_capacity_m3, delivery_schedule,
                                        min_shelf_life_days)
 
-    # Bước 1-2: dự báo (BR-002) + (chỉ tối ưu) safety stock/reorder point (BR-006, BR-007)
+    # Bước 1-2: dự báo (BR-002) + safety stock/reorder point (BR-006, BR-007, chỉ tối ưu)
+    # + nhu cầu trung bình ngày (dùng cho cả 2 kịch bản: reorder point tối ưu và ngưỡng
+    # days-of-inventory baseline, cũng như đặt hàng bổ sung BR-025 của cả 2 kịch bản).
     forecast_weekly: dict[tuple[int, int], float] = {}
     reorder_point_by_key: dict[tuple[int, int], float] = {}
     safety_stock_by_key: dict[tuple[int, int], float] = {}
+    avg_daily_demand_by_key: dict[tuple[int, int], float] = {}
     for key, history in sales_history.items():
         forecaster = HoltWintersForecaster() if scenario == "optimized" else NaiveForecaster()
         forecaster.fit(history)
         forecast_weekly[key] = float(forecaster.predict(7).sum())
 
+        recent = history.tail(28)
+        avg_daily_demand = float(recent.mean()) if len(recent) > 0 else 0.0
+        avg_daily_demand_by_key[key] = avg_daily_demand
+
         if scenario == "optimized":
             attrs = product_attrs[key[1]]
-            recent = history.tail(28)
             demand_std = float(recent.std(ddof=0)) if len(recent) > 0 else 0.0
-            avg_daily_demand = float(recent.mean()) if len(recent) > 0 else 0.0
             safety_stock = compute_safety_stock(demand_std, attrs["z_score"], attrs["lead_time_days"])
             safety_stock_by_key[key] = safety_stock
             reorder_point_by_key[key] = compute_reorder_point(avg_daily_demand, attrs["lead_time_days"],
@@ -89,7 +99,7 @@ def run_week(
             transfer_lines = plan_transfers_ga(deficits, surpluses, batches, transport_cost_matrix,
                                                 product_weight_volume, constraints, current_date, seed=ga_seed)
 
-    # Bước 5: áp dụng kế hoạch chuyển hàng vào tồn kho
+    # Bước 5: áp dụng kế hoạch chuyển hàng và hàng bổ sung từ NCC (BR-025, đặt tuần trước) vào tồn kho
     updated_batches = {key: list(blist) for key, blist in batches.items()}
     for line in transfer_lines:
         from_key = (line.from_store_id, line.product_id)
@@ -101,6 +111,15 @@ def run_week(
         updated_batches.setdefault(to_key, []).append(
             Batch(f"{line.batch_id}-T{line.to_store_id}", line.to_store_id, line.product_id,
                   line.quantity, source_expiry)
+        )
+    for key, quantity in incoming_replenishment.items():
+        if quantity <= 0:
+            continue
+        store_id, product_id = key
+        category = product_attrs[product_id]["category"]
+        expiry_date = current_date + timedelta(days=CATEGORY_SHELF_LIFE_DAYS[category])
+        updated_batches.setdefault(key, []).append(
+            Batch(f"REPL-{store_id}-{product_id}-W{week_index}", store_id, product_id, quantity, expiry_date)
         )
 
     # Bước 6: giả lập bán hàng thực tế (tiêu thụ theo FEFO)
@@ -116,16 +135,20 @@ def run_week(
             remaining_demand -= consumed
         updated_batches[key] = [b for b in blist if b.quantity > 0]
 
-    # Bước 7: tính KPI (BR-019)
+    # Bước 7: tính KPI (BR-019) + xác định đơn hàng bổ sung cho tuần sau (BR-025, BR-026)
     end_of_week_stock = {key: sum(b.quantity for b in blist) for key, blist in updated_batches.items()}
     if scenario == "optimized":
         threshold_by_key = reorder_point_by_key
+        target_by_key = {key: 2.0 * rp for key, rp in reorder_point_by_key.items()}
     else:
-        threshold_by_key = {
-            key: max_inventory_days * (float(sales_history[key].tail(28).mean()) if key in sales_history else 0.0)
-            for key in end_of_week_stock
-        }
+        threshold_by_key = {key: min_inventory_days * avg for key, avg in avg_daily_demand_by_key.items()}
+        target_by_key = {key: max_inventory_days * avg for key, avg in avg_daily_demand_by_key.items()}
     cost_by_product = {pid: attrs["cost"] for pid, attrs in product_attrs.items()}
+
+    pending_replenishment = {
+        key: compute_replenishment_order(stock, threshold_by_key.get(key, 0.0), target_by_key.get(key, 0.0))
+        for key, stock in end_of_week_stock.items()
+    }
 
     kpi = WeeklyKPI(
         week=week_index,
@@ -137,4 +160,5 @@ def run_week(
         mape=compute_mape(forecast_weekly, actual_demand_this_week),
     )
 
-    return WeekResult(updated_batches=updated_batches, kpi=kpi, transfer_lines=transfer_lines)
+    return WeekResult(updated_batches=updated_batches, kpi=kpi, transfer_lines=transfer_lines,
+                       pending_replenishment=pending_replenishment)

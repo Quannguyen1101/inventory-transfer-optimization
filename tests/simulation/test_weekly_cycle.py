@@ -65,3 +65,33 @@ def test_transferred_stock_is_available_for_sales_at_destination():
     )
     remaining_at_store_1 = sum(b.quantity for b in result.updated_batches.get((1, 10), []))
     assert remaining_at_store_1 >= 0  # đã nhận hàng và bán một phần, không bị lỗi âm kho
+
+
+def test_deficit_below_threshold_after_sales_triggers_pending_replenishment():
+    history = pd.Series([10.0] * 30)
+    batches = {(1, 10): [Batch("B1", 1, 10, quantity=5, expiry_date=date(2026, 6, 1))]}
+    result = run_week(
+        week_index=1, current_date=date(2026, 1, 5), scenario="baseline", algorithm="rule_based",
+        batches=batches, sales_history={(1, 10): history}, actual_demand_this_week={(1, 10): 5.0},
+        product_attrs=_product_attrs(), distance_km={}, transport_cost_matrix={}, delivery_schedule={},
+        vehicle_capacity_kg=500.0, vehicle_capacity_m3=2.0, min_shelf_life_days=7,
+        min_inventory_days=7.0, max_inventory_days=30.0,
+    )
+    # Sau bán hàng: tồn kho = 0, avg_daily_demand = 10 -> ngưỡng baseline = 7*10 = 70 -> chắc chắn dưới ngưỡng
+    assert result.pending_replenishment[(1, 10)] > 0
+
+
+def test_incoming_replenishment_is_added_to_stock_before_sales():
+    history = pd.Series([10.0] * 30)
+    batches = {(1, 10): [Batch("B1", 1, 10, quantity=0, expiry_date=date(2026, 6, 1))]}
+    result = run_week(
+        week_index=2, current_date=date(2026, 1, 12), scenario="baseline", algorithm="rule_based",
+        batches=batches, sales_history={(1, 10): history}, actual_demand_this_week={(1, 10): 20.0},
+        product_attrs=_product_attrs(), distance_km={}, transport_cost_matrix={}, delivery_schedule={},
+        vehicle_capacity_kg=500.0, vehicle_capacity_m3=2.0, min_shelf_life_days=7,
+        min_inventory_days=7.0, max_inventory_days=30.0,
+        incoming_replenishment={(1, 10): 50.0},
+    )
+    remaining = sum(b.quantity for b in result.updated_batches.get((1, 10), []))
+    assert remaining == 30.0  # 0 tồn kho + 50 nhập về - 20 bán ra = 30
+    assert result.kpi.stockout_rate == 0.0  # đủ hàng nhờ replenishment, không stockout
