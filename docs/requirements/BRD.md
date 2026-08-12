@@ -227,6 +227,16 @@ Các tham số dưới đây giải quyết OQ-001, OQ-003, OQ-004, OQ-006 (xem 
   - Sai số dự báo (MAPE) trung bình toàn hệ thống: dưới 20%.
   - Nếu một chỉ tiêu không đạt ngưỡng trên nhưng xu hướng cải thiện nhất quán và giải thích được qua các tuần, vẫn coi là đạt tiêu chí thành công cho mục đích demo/portfolio.
 
+**Kết quả thực đo (2026-08-12, full scale 20 cửa hàng/30 SKU/12 tuần, cả 2 thuật toán):**
+
+| KPI | Baseline | Optimized | Nhận định |
+|---|---|---|---|
+| Stockout rate (TB) | 2.5% | 22.8% | Không đạt ngưỡng ↓30% — **cao hơn** baseline |
+| Excess inventory value (TB) | 32.5 tỷ VNĐ | 1.7 tỷ VNĐ | Vượt xa ngưỡng ↓20% — **giảm 95%** |
+| Transport cost | 0 (không chuyển hàng) | ~66.5 triệu/tuần | Baseline không có, không so sánh trực tiếp được |
+
+Không đạt đồng thời cả 2 mục tiêu ban đầu, nhưng kết quả vẫn được **chấp nhận là thành công cho mục đích portfolio** (quyết định của chủ dự án, 2026-08-12) vì thể hiện đúng một đánh đổi có thật trong quản trị tồn kho: chính sách baseline (ngưỡng days-of-inventory cố định, đệm rộng 30 ngày) tránh được hết hàng bằng cách chôn vốn rất lớn vào tồn kho dư; chính sách tối ưu (reorder point theo thống kê, đệm sát service level 90-98%) giải phóng vốn mạnh (giảm 95% tồn kho dư) nhưng chấp nhận rủi ro thiếu hàng cao hơn mức lý thuyết ứng với service level đã cấu hình. Nguyên nhân stockout cao hơn dự kiến nhiều khả năng do `safety_stock` chỉ tính độ lệch chuẩn nhu cầu trên window 28 ngày gần nhất, chưa hiệu chỉnh theo xu hướng tăng trưởng nhu cầu (trend) — cơ hội cải tiến trong tương lai, không chặn việc coi dự án là hoàn thành.
+
 ## 13. Open Questions
 
 Toàn bộ Open Questions dưới đây đã được chủ dự án quyết định trực tiếp (dự án cá nhân/demo, không cần khảo sát thêm).
