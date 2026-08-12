@@ -5,7 +5,7 @@ from typing import Literal
 
 import pandas as pd
 
-from src.config import CATEGORY_SHELF_LIFE_DAYS
+from src.config import CATEGORY_SHELF_LIFE_DAYS, REPLENISHMENT_REVIEW_PERIOD_DAYS
 from src.forecasting.holt_winters_forecaster import HoltWintersForecaster
 from src.forecasting.naive_forecaster import NaiveForecaster
 from src.inventory_policy.classifier import StockPosition, StockStatus, classify_stock, classify_stock_baseline
@@ -139,7 +139,16 @@ def run_week(
     end_of_week_stock = {key: sum(b.quantity for b in blist) for key, blist in updated_batches.items()}
     if scenario == "optimized":
         threshold_by_key = reorder_point_by_key
-        target_by_key = {key: 2.0 * rp for key, rp in reorder_point_by_key.items()}
+        # Order-up-to level chuẩn cho hệ thống periodic-review (BR-025/026): đủ che nhu cầu
+        # trong cả lead time lẫn chu kỳ review tiếp theo, cộng safety stock — không dùng hệ số
+        # tùy tiện nhân với reorder_point (dễ tạo target quá nhỏ, không thể so sánh công bằng
+        # với ngưỡng max_inventory_days của baseline).
+        target_by_key = {
+            key: avg_daily_demand_by_key[key] * (product_attrs[key[1]]["lead_time_days"]
+                                                   + REPLENISHMENT_REVIEW_PERIOD_DAYS)
+                 + safety_stock_by_key.get(key, 0.0)
+            for key in reorder_point_by_key
+        }
     else:
         threshold_by_key = {key: min_inventory_days * avg for key, avg in avg_daily_demand_by_key.items()}
         target_by_key = {key: max_inventory_days * avg for key, avg in avg_daily_demand_by_key.items()}

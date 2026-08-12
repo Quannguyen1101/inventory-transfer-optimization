@@ -66,3 +66,7 @@ CATEGORY_SHELF_LIFE_DAYS = {
 # Ngưỡng days-of-inventory cho kịch bản baseline (logic v1)
 MIN_INVENTORY_DAYS = 7.0
 MAX_INVENTORY_DAYS = 30.0
+
+# Chu kỳ review cho công thức order-up-to của kịch bản tối ưu (BR-025/026) — khớp nhịp tuần
+# của rolling simulation: target = avg_daily_demand x (lead_time_days + chu kỳ review) + safety_stock.
+REPLENISHMENT_REVIEW_PERIOD_DAYS = 7.0
