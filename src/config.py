@@ -53,6 +53,16 @@ CATEGORY_LEAD_TIME_DAYS = {
     "Household": 7,
 }
 
+# Hạn sử dụng theo danh mục (ngày) — dùng khi sinh batch ban đầu (UC-003) và khi nhận hàng
+# bổ sung từ NCC trong simulation (BR-025).
+CATEGORY_SHELF_LIFE_DAYS = {
+    "Essentials": 180,
+    "Beverages": 270,
+    "Dry Goods": 365,
+    "Frozen": 45,
+    "Household": 365,
+}
+
 # Ngưỡng days-of-inventory cho kịch bản baseline (logic v1)
 MIN_INVENTORY_DAYS = 7.0
 MAX_INVENTORY_DAYS = 30.0

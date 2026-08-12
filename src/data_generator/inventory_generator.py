@@ -4,9 +4,8 @@ from datetime import date, timedelta
 import numpy as np
 import pandas as pd
 
-_CATEGORY_SHELF_LIFE_DAYS = {
-    "Essentials": 180, "Beverages": 270, "Dry Goods": 365, "Frozen": 45, "Household": 365,
-}
+from src.config import CATEGORY_SHELF_LIFE_DAYS
+
 _COVERAGE_DAYS_RANGE = (10, 20)
 _RECEIVED_OFFSET_MAX_DAYS = 5
 
@@ -23,7 +22,7 @@ def generate_inventory_batches(stores_df: pd.DataFrame, products_df: pd.DataFram
             coverage_days = rng.uniform(*_COVERAGE_DAYS_RANGE)
             quantity = max(1, int(round(demand * coverage_days)))
             received_date = as_of_date - timedelta(days=int(rng.integers(0, _RECEIVED_OFFSET_MAX_DAYS + 1)))
-            shelf_life = _CATEGORY_SHELF_LIFE_DAYS[category_by_product[product["product_id"]]]
+            shelf_life = CATEGORY_SHELF_LIFE_DAYS[category_by_product[product["product_id"]]]
             expiry_date = received_date + timedelta(days=shelf_life)
             records.append({
                 "batch_id": f"B{batch_counter:06d}",
