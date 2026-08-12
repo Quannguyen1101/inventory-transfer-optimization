@@ -83,6 +83,7 @@ def run_simulation(
         for scenario in ["baseline", "optimized"]:
             batches = _to_batches_dict(batches_df)
             sales_history = {key: series.copy() for key, series in initial_history.items()}
+            pending_replenishment: dict[tuple[int, int], float] = {}
 
             for week_index in range(1, n_weeks + 1):
                 actual_demand = weekly_future[week_index - 1]
@@ -94,9 +95,10 @@ def run_simulation(
                     delivery_schedule=delivery_schedule, vehicle_capacity_kg=config.VEHICLE_CAPACITY_KG,
                     vehicle_capacity_m3=config.VEHICLE_CAPACITY_M3, min_shelf_life_days=config.MIN_SHELF_LIFE_DAYS,
                     min_inventory_days=config.MIN_INVENTORY_DAYS, max_inventory_days=config.MAX_INVENTORY_DAYS,
-                    ga_seed=seed + week_index,
+                    ga_seed=seed + week_index, incoming_replenishment=pending_replenishment,
                 )
                 batches = result.updated_batches
+                pending_replenishment = result.pending_replenishment
                 for key, weekly_total in actual_demand.items():
                     daily_avg = weekly_total / 7
                     existing = sales_history.get(key, pd.Series(dtype=float))

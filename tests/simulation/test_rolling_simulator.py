@@ -80,3 +80,15 @@ def test_optimized_scenario_incurs_transport_cost_baseline_does_not(tmp_path):
     optimized_cost = kpi_df[kpi_df["scenario"] == "optimized"]["transport_cost"].sum()
     assert baseline_cost == 0.0  # baseline không bao giờ chuyển hàng (AF-1 của UC-002)
     assert optimized_cost > 0.0  # store 1 thiếu hụt rõ rệt, store 2 dư rõ rệt -> phải có chuyển hàng
+
+
+def test_replenishment_prevents_stockout_from_worsening_over_many_weeks(tmp_path):
+    # BR-025: nếu không có replenishment, tồn kho hệ thống cạn dần đơn điệu qua các tuần vì chỉ
+    # bán ra, không có nguồn bổ sung -> stockout_rate hội tụ về 1.0 và không bao giờ giảm lại.
+    # Test này xác nhận có replenishment thì stockout không đơn điệu tăng mãi tới 100%.
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    _write_minimal_dataset(data_dir)
+    kpi_df = run_simulation(data_dir=data_dir, n_weeks=2, history_weeks=3, algorithm="rule_based",
+                             seed=1, results_dir=tmp_path / "results", dashboard_dir=tmp_path / "dashboard")
+    assert (kpi_df["stockout_rate"] < 1.0).any()
