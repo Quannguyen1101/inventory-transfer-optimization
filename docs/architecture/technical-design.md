@@ -30,10 +30,11 @@ inventory-transfer-optimization/
 │   │   ├── base.py                #   abstract Forecaster (strategy pattern)
 │   │   ├── holt_winters_forecaster.py   # kịch bản tối ưu
 │   │   └── naive_forecaster.py    #   kịch bản baseline + fallback OQ-009
-│   ├── inventory_policy/          # BR-004–008
+│   ├── inventory_policy/          # BR-004–008, BR-025–026
 │   │   ├── safety_stock.py
 │   │   ├── reorder_point.py
-│   │   └── classifier.py
+│   │   ├── classifier.py
+│   │   └── replenishment.py       #   BR-025, BR-026 (đặt hàng bổ sung từ NCC, về sau 1 tuần)
 │   ├── optimization/              # BR-009–016
 │   │   ├── constraints.py         #   dùng chung cho cả 2 thuật toán (BR-015, BR-016)
 │   │   ├── rule_based.py
@@ -80,6 +81,11 @@ class Forecaster(ABC):
 # inventory_policy/ — BR-006, BR-007
 def compute_safety_stock(demand_std, z_score, lead_time_days) -> float
 def compute_reorder_point(avg_demand, lead_time_days, safety_stock) -> float
+
+# inventory_policy/replenishment.py — BR-025, BR-026 (order-up-to policy)
+def compute_replenishment_order(current_stock, reorder_point, target_multiplier=2.0) -> float
+# Đơn hàng đặt tuần t được cộng vào tồn kho đầu tuần t+1 (rolling_simulator truyền qua tham số
+# incoming_replenishment của run_week) — độ trễ 1 tuần xấp xỉ lead_time_days (đều ≤ 7 ngày).
 
 # optimization/constraints.py — dùng chung cho cả 2 thuật toán
 @dataclass

@@ -6,7 +6,7 @@
 |---|---|
 | Tên dự án | Inventory Transfer Optimization System v2 |
 | Mã dự án | ITOS-V2 |
-| Phiên bản | 1.1 |
+| Phiên bản | 1.2 |
 | Ngày tạo | 2026-08-06 |
 | Tác giả | Chủ dự án (Portfolio Owner) |
 | Trạng thái | Draft |
@@ -17,6 +17,7 @@
 |---|---|---|---|
 | 1.0 | 2026-08-06 | Chủ dự án | Khởi tạo BRD từ ghi chú yêu cầu ban đầu |
 | 1.1 | 2026-08-06 | Chủ dự án | Giải quyết OQ-001 đến OQ-006 (dự án cá nhân, quyết định trực tiếp không cần khảo sát thêm); bổ sung Mục 7A tham số cấu hình |
+| 1.2 | 2026-08-12 | Chủ dự án | Bổ sung BR-025, BR-026 (đặt hàng bổ sung từ nhà cung cấp) sau khi kiểm thử thực tế phát hiện hệ thống không có nguồn bổ sung tồn kho bên ngoài, khiến 2 kịch bản baseline/tối ưu hội tụ về cùng kết quả trong simulation 12 tuần |
 
 ---
 
@@ -84,8 +85,9 @@ Hệ thống v2 vận hành theo mô hình rolling simulation nhiều chu kỳ (
 1. **Dự báo nhu cầu** cho từng SKU/cửa hàng bằng Holt-Winters/exponential smoothing (xét seasonality, trend), trên dữ liệu synthetic được sinh có đặc tính tương ứng.
 2. **Tính safety stock và reorder point** theo công thức chuẩn (service level/Z-score, độ lệch chuẩn nhu cầu, lead time theo danh mục hàng), thay cho ngưỡng days-of-inventory.
 3. **Lập kế hoạch chuyển hàng có ràng buộc**: cả rule-based greedy và genetic algorithm đều tôn trọng sức chứa xe, lịch giao hàng cố định giữa các cặp cửa hàng, và nguyên tắc FEFO/loại trừ hàng quá cận hạn.
-4. **Giả lập bán hàng thực tế của tuần đó**, cập nhật tồn kho.
-5. **Đo KPI** (tỷ lệ hết hàng, tồn kho dư, chi phí vận chuyển, sai số dự báo MAPE) và tích lũy theo thời gian.
+4. **Đặt hàng bổ sung từ nhà cung cấp** cho các vị trí vẫn dưới reorder point sau khi đã chuyển hàng ngang, về đến nơi sau 1 tuần (BR-025, BR-026).
+5. **Giả lập bán hàng thực tế của tuần đó**, cập nhật tồn kho.
+6. **Đo KPI** (tỷ lệ hết hàng, tồn kho dư, chi phí vận chuyển, sai số dự báo MAPE) và tích lũy theo thời gian.
 
 Kết quả cuối cùng là một dashboard HTML tĩnh minh họa xu hướng KPI qua các tuần, so sánh kịch bản có tối ưu với kịch bản baseline, dùng để trình bày trong CV/portfolio. Kiến trúc code được module hóa (forecasting, inventory policy, optimization, simulation, reporting) để dễ mở rộng — ví dụ thêm model ML dự báo sau này mà không phải viết lại toàn bộ.
 
@@ -108,6 +110,8 @@ Kết quả cuối cùng là một dashboard HTML tĩnh minh họa xu hướng K
 | BR-006 | Tính safety stock theo công thức chuẩn | Hệ thống tính safety stock = Z(service level) × độ lệch chuẩn nhu cầu × căn bậc hai(lead time), theo từng SKU/cửa hàng | Must | Thay thế ngưỡng days-of-inventory bằng cơ sở thống kê chuẩn | Ghi chú yêu cầu |
 | BR-007 | Tính reorder point | Hệ thống tính reorder point = nhu cầu trung bình trong lead time + safety stock, theo từng SKU/cửa hàng | Must | Là ngưỡng kích hoạt nhu cầu bổ sung/chuyển hàng, thay cho ngưỡng days-of-inventory | Ghi chú yêu cầu |
 | BR-008 | Phân loại thừa/thiếu theo reorder point/safety stock | Việc phân loại cửa hàng thừa hàng/thiếu hàng dựa trên vị trí tồn kho hiện tại so với reorder point và safety stock, không còn dùng ngưỡng days-of-inventory đơn giản của v1 | Must | Là thay đổi cốt lõi so với v1, phản ánh đúng rủi ro thiếu hàng | Ghi chú yêu cầu |
+| BR-025 | Đặt hàng bổ sung từ nhà cung cấp khi chạm reorder point | Khi tồn kho một SKU/cửa hàng (sau khi đã tính cả kế hoạch chuyển hàng ngang) thấp hơn reorder point, hệ thống tự động đặt hàng bổ sung từ nhà cung cấp (giả lập), đủ để đưa tồn kho lên mức mục tiêu = 2 × reorder point (nhất quán với ngưỡng surplus ở BR-008) | Must | Phát hiện qua kiểm thử thực tế v2 (2026-08-12): nếu chỉ chuyển hàng ngang giữa các cửa hàng mà không có nguồn bổ sung từ bên ngoài, tổng tồn kho toàn hệ thống là hữu hạn và sẽ cạn kiệt đồng loạt trong vài tuần đầu của rolling simulation 12 tuần, khiến 2 kịch bản baseline/tối ưu cho kết quả gần như giống hệt nhau — không thể hiện được giá trị của forecasting/safety stock/optimization. Đây cũng là bản chất đúng của reorder point (vốn dùng để kích hoạt đặt hàng, không chỉ để phân loại) | Kiểm thử thực tế, được chủ dự án xác nhận bổ sung |
+| BR-026 | Độ trễ giao hàng bổ sung xấp xỉ 1 chu kỳ tuần | Hàng đặt bổ sung ở BR-025 được giả lập về đến nơi sau đúng 1 tuần (chu kỳ simulation kế tiếp), không mô hình hóa chi tiết theo từng ngày lead time | Should | Đơn giản hóa hợp lý: toàn bộ lead_time_days theo danh mục (Mục 7A) đều ≤ 7 ngày — nằm gọn trong 1 chu kỳ tuần của simulation (đã là đơn vị thời gian nhỏ nhất của UC-002), không cần theo dõi pipeline đặt hàng theo ngày | Quyết định kỹ thuật khi triển khai |
 
 ### Nhóm C — Ràng buộc vận hành thực tế
 
