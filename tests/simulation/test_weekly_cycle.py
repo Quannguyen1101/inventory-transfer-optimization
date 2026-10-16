@@ -68,7 +68,7 @@ def test_transferred_stock_is_available_for_sales_at_destination():
     assert remaining_at_store_1 >= 0  # đã nhận hàng và bán một phần, không bị lỗi âm kho
 
 
-@pytest.mark.parametrize("algorithm", ["rule_based", "ga"])
+@pytest.mark.parametrize("algorithm", ["rule_based", "cost_greedy", "ga"])
 def test_transfers_conserve_total_system_stock(algorithm):
     # Không bán hàng, không nhập hàng: chuyển hàng ngang chỉ được dời tồn kho, không được tạo thêm.
     history = pd.Series([10.0] * 30)
@@ -111,6 +111,7 @@ def test_ga_weighs_route_cost_against_lost_margin_while_rule_based_does_not():
 
     assert len(run("rule_based").transfer_lines) == 1
     assert run("ga").transfer_lines == []
+    assert run("cost_greedy").transfer_lines == []
 
 
 @pytest.mark.parametrize("scenario", ["baseline", "optimized"])

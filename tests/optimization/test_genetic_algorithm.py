@@ -143,9 +143,26 @@ def test_seeded_ga_is_never_worse_than_its_seed_plan():
     plan = plan_transfers_ga(
         deficits=copy.deepcopy(deficits), surpluses=copy.deepcopy(surpluses), batches_by_store_product=fresh_batches(),
         transport_cost=cost, product_attrs={10: (1.0, 1.0)}, constraints=constraints, current_date=date(2026, 1, 5),
-        population_size=20, generations=30, seed=1, seed_plan=seed_plan, shortage_cost_per_unit=shortage_cost,
+        population_size=20, generations=30, seed=1, seed_plans=[seed_plan], shortage_cost_per_unit=shortage_cost,
     )
     assert _total_cost(plan, deficits, cost, shortage_cost) <= _total_cost(seed_plan, deficits, cost, shortage_cost)
+
+
+def test_consolidates_small_shortfalls_onto_one_profitable_trip():
+    # Cùng tình huống mà cost-greedy bỏ qua: gộp 2 mặt hàng lên 1 chuyến thì có lời (60.000 > 50.000).
+    deficits = [StockPosition(store_id=1, product_id=p, current_stock=0, reorder_point=3, safety_stock=1)
+                for p in (10, 11)]
+    surpluses = [StockPosition(store_id=2, product_id=p, current_stock=100, reorder_point=20, safety_stock=5)
+                 for p in (10, 11)]
+    batches = {(2, p): [Batch(f"B{p}", 2, p, quantity=50, expiry_date=date(2026, 3, 1))] for p in (10, 11)}
+    plan = plan_transfers_ga(
+        deficits=deficits, surpluses=surpluses, batches_by_store_product=batches,
+        transport_cost={(2, 1): 50_000.0}, product_attrs={10: (1.0, 1.0), 11: (1.0, 1.0)},
+        constraints=_base_constraints(), current_date=date(2026, 1, 5),
+        population_size=20, generations=30, seed=1, seed_plans=[[]],
+        shortage_cost_per_unit={10: 10_000.0, 11: 10_000.0},
+    )
+    assert sorted((l.product_id, l.quantity) for l in plan) == [(10, 3), (11, 3)]
 
 
 def test_is_reproducible_with_same_seed():

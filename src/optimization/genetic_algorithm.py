@@ -5,8 +5,8 @@ khả thi — không rút quá lô hàng / quá phần dư của cửa hàng ngu
 thiếu, không vượt sức chứa xe mỗi tuyến. Hàm mục tiêu = chi phí tuyến vận chuyển + chi phí thiếu hàng
 (số đơn vị còn thiếu so với reorder point x chi phí thiếu hàng/đơn vị của sản phẩm).
 
-Quần thể có thể được seed bằng một kế hoạch có sẵn (vd. nghiệm rule-based); nhờ elitism, kết quả không
-bao giờ tệ hơn kế hoạch seed theo chính hàm mục tiêu này.
+Quần thể có thể được seed bằng các kế hoạch có sẵn (vd. nghiệm rule-based, cost-greedy); nhờ elitism, kết
+quả không bao giờ tệ hơn kế hoạch seed tốt nhất theo chính hàm mục tiêu này.
 """
 import math
 from collections import defaultdict
@@ -179,12 +179,13 @@ def plan_transfers_ga(
     population_size: int = 60,
     generations: int = 150,
     seed: int = 42,
-    seed_plan: list[TransferLine] | None = None,
+    seed_plans: list[list[TransferLine]] | None = None,
     shortage_cost_per_unit: dict[int, float] | None = None,
 ) -> list[TransferLine]:
     """Trừ số lượng đã chuyển khỏi Batch.quantity và StockPosition.current_stock của nguồn (giống
     rule_based) — caller phải truyền bản sao riêng cho mỗi tuần. `shortage_cost_per_unit` theo
-    product_id (mặc định 100.000đ/đv); `seed_plan` phải được lập trên cùng tồn kho, chưa bị trừ."""
+    product_id (mặc định 100.000đ/đv); mỗi kế hoạch trong `seed_plans` thành một cá thể ban đầu và phải
+    được lập trên cùng tồn kho, chưa bị trừ."""
     rng = np.random.default_rng(seed)
     candidates = _build_candidates(deficits, surpluses, batches_by_store_product, product_attrs,
                                     constraints, current_date)
@@ -196,8 +197,8 @@ def plan_transfers_ga(
     max_quantities = np.array([c.max_quantity for c in candidates])
     shape = (population_size, len(candidates))
     population = rng.uniform(0, max_quantities, size=shape) * (rng.random(shape) < 0.5)  # khởi tạo thưa
-    if seed_plan:
-        population[0] = _encode(seed_plan, candidates)
+    for i, plan in enumerate((seed_plans or [])[:population_size]):
+        population[i] = _encode(plan, candidates)
 
     def fitness_of(genes: np.ndarray) -> float:
         return _fitness(_decode(genes, candidates, limits), limits, transport_cost, shortage_cost_per_unit)

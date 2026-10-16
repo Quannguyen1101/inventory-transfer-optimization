@@ -23,7 +23,7 @@ def main() -> None:
     parser.add_argument("--simulate", action="store_true")
     parser.add_argument("--dashboard-only", action="store_true")
     parser.add_argument("--weeks", type=int, default=config.SIMULATION_WEEKS)
-    parser.add_argument("--algorithm", choices=["rule_based", "ga", "both"], default="both")
+    parser.add_argument("--algorithm", choices=["rule_based", "cost_greedy", "ga", "all"], default="all")
     parser.add_argument("--seed", type=int, default=config.RANDOM_SEED)
     parser.add_argument("--scenario", choices=["uniform", "regional"], default="uniform")
     args = parser.parse_args()

@@ -68,6 +68,16 @@ def test_runs_two_week_simulation_and_produces_kpi_and_dashboard(tmp_path):
     assert (dashboard_dir / "dashboard.html").exists()
 
 
+def test_all_runs_every_transfer_algorithm(tmp_path):
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    _write_minimal_dataset(data_dir)
+    kpi_df = run_simulation(data_dir=data_dir, n_weeks=2, history_weeks=3, algorithm="all", seed=1,
+                            results_dir=tmp_path / "results", dashboard_dir=tmp_path / "dashboard")
+    optimized = kpi_df[kpi_df["scenario"] == "optimized"]
+    assert set(optimized["algorithm"]) == {"rule_based", "cost_greedy", "ga"}
+
+
 def test_optimized_scenario_incurs_transport_cost_baseline_does_not(tmp_path):
     data_dir = tmp_path / "data"
     data_dir.mkdir()

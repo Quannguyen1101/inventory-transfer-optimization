@@ -14,6 +14,7 @@ from src.inventory_policy.replenishment import compute_replenishment_order
 from src.inventory_policy.reorder_point import compute_reorder_point
 from src.inventory_policy.safety_stock import compute_safety_stock
 from src.optimization.constraints import Batch, TransferConstraints, TransferLine
+from src.optimization.cost_greedy import plan_transfers_cost_greedy
 from src.optimization.genetic_algorithm import plan_transfers_ga
 from src.optimization.rule_based import plan_transfers_rule_based
 from src.simulation.kpi_tracker import (
@@ -33,7 +34,7 @@ def run_week(
     week_index: int,
     current_date: date,
     scenario: Literal["baseline", "optimized"],
-    algorithm: Literal["rule_based", "ga"],
+    algorithm: Literal["rule_based", "cost_greedy", "ga"],
     batches: dict[tuple[int, int], list[Batch]],
     sales_history: dict[tuple[int, int], pd.Series],
     actual_demand_this_week: dict[tuple[int, int], float],
@@ -93,19 +94,27 @@ def run_week(
                 surpluses.append(position)
 
         product_weight_volume = {pid: (a["weight_kg"], a["volume_l"]) for pid, a in product_attrs.items()}
+        # Chi phí thiếu hàng/đơn vị = biên lợi nhuận của sản phẩm (dùng cho cost-greedy và GA).
+        margin = {pid: a["price"] - a["cost"] for pid, a in product_attrs.items()}
+
+        def rule_based(d, s, b):
+            return plan_transfers_rule_based(d, s, b, distance_km, product_weight_volume, constraints, current_date)
+
+        def cost_greedy(d, s, b):
+            return plan_transfers_cost_greedy(d, s, b, transport_cost_matrix, product_weight_volume, constraints,
+                                              current_date, margin)
+
         if algorithm == "rule_based":
-            transfer_lines = plan_transfers_rule_based(deficits, surpluses, batches, distance_km,
-                                                         product_weight_volume, constraints, current_date)
+            transfer_lines = rule_based(deficits, surpluses, batches)
+        elif algorithm == "cost_greedy":
+            transfer_lines = cost_greedy(deficits, surpluses, batches)
         else:
-            # Seed GA bằng nghiệm rule-based (lập trên bản sao vì rule-based trừ thẳng vào tồn kho nguồn);
-            # chi phí thiếu hàng/đơn vị = biên lợi nhuận của sản phẩm.
-            seed_plan = plan_transfers_rule_based(copy.deepcopy(deficits), copy.deepcopy(surpluses),
-                                                  copy.deepcopy(batches), distance_km, product_weight_volume,
-                                                  constraints, current_date)
-            margin = {pid: a["price"] - a["cost"] for pid, a in product_attrs.items()}
+            # Seed GA bằng nghiệm của 2 heuristic (lập trên bản sao vì chúng trừ thẳng vào tồn kho nguồn).
+            seed_plans = [planner(copy.deepcopy(deficits), copy.deepcopy(surpluses), copy.deepcopy(batches))
+                          for planner in (rule_based, cost_greedy)]
             transfer_lines = plan_transfers_ga(deficits, surpluses, batches, transport_cost_matrix,
                                                 product_weight_volume, constraints, current_date, seed=ga_seed,
-                                                seed_plan=seed_plan, shortage_cost_per_unit=margin)
+                                                seed_plans=seed_plans, shortage_cost_per_unit=margin)
 
     # Bước 5: áp dụng kế hoạch chuyển hàng và hàng bổ sung từ NCC (BR-025, đặt tuần trước) vào tồn kho
     updated_batches = {key: list(blist) for key, blist in batches.items()}

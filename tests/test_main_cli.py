@@ -30,6 +30,14 @@ def test_simulate_flag_calls_run_simulation_with_parsed_args(monkeypatch):
         )
 
 
+def test_simulate_runs_all_algorithms_by_default(monkeypatch):
+    monkeypatch.setattr(sys, "argv", ["main.py", "--simulate"])
+    with patch("src.main.run_simulation") as mock_simulate:
+        mock_simulate.return_value = _sample_kpi_df()
+        main_module.main()
+        assert mock_simulate.call_args.kwargs["algorithm"] == "all"
+
+
 def test_regional_scenario_uses_its_own_subdirectories(monkeypatch):
     monkeypatch.setattr(sys, "argv", ["main.py", "--generate-data", "--simulate", "--scenario", "regional"])
     with patch("src.main.run_data_generation") as mock_generate, patch("src.main.run_simulation") as mock_simulate:

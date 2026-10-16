@@ -64,7 +64,7 @@ def run_simulation(
     data_dir: Path = config.DATA_DIR,
     n_weeks: int = config.SIMULATION_WEEKS,
     history_weeks: int = config.HISTORY_WEEKS,
-    algorithm: Literal["rule_based", "ga", "both"] = "both",
+    algorithm: Literal["rule_based", "cost_greedy", "ga", "all"] = "all",
     seed: int = config.RANDOM_SEED,
     results_dir: Path = config.RESULTS_DIR,
     dashboard_dir: Path = config.DASHBOARD_DIR,
@@ -76,7 +76,7 @@ def run_simulation(
     delivery_schedule = _schedule_dict(schedule_df)
     initial_history, weekly_future = _split_history_and_future(sales, history_weeks, n_weeks)
 
-    algorithms = ["rule_based", "ga"] if algorithm == "both" else [algorithm]
+    algorithms = ["rule_based", "cost_greedy", "ga"] if algorithm == "all" else [algorithm]
     all_kpi_rows = []
 
     for algo in algorithms:
