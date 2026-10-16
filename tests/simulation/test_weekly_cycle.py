@@ -1,5 +1,6 @@
 from datetime import date
 import pandas as pd
+import pytest
 from src.optimization.constraints import Batch
 from src.simulation.weekly_cycle import run_week
 
@@ -65,6 +66,28 @@ def test_transferred_stock_is_available_for_sales_at_destination():
     )
     remaining_at_store_1 = sum(b.quantity for b in result.updated_batches.get((1, 10), []))
     assert remaining_at_store_1 >= 0  # đã nhận hàng và bán một phần, không bị lỗi âm kho
+
+
+@pytest.mark.parametrize("algorithm", ["rule_based", "ga"])
+def test_transfers_conserve_total_system_stock(algorithm):
+    # Không bán hàng, không nhập hàng: chuyển hàng ngang chỉ được dời tồn kho, không được tạo thêm.
+    history = pd.Series([10.0] * 30)
+    batches = {
+        (1, 10): [Batch("B1", 1, 10, quantity=2, expiry_date=date(2026, 6, 1))],
+        (2, 10): [Batch("B2", 2, 10, quantity=200, expiry_date=date(2026, 6, 1))],
+    }
+    result = run_week(
+        week_index=1, current_date=date(2026, 1, 5), scenario="optimized", algorithm=algorithm,
+        batches=batches, sales_history={(1, 10): history, (2, 10): history},
+        actual_demand_this_week={},
+        product_attrs=_product_attrs(), distance_km={(2, 1): 10.0}, transport_cost_matrix={(2, 1): 50_000.0},
+        delivery_schedule={(2, 1): ["Mon"]},
+        vehicle_capacity_kg=500.0, vehicle_capacity_m3=2.0, min_shelf_life_days=7,
+        min_inventory_days=7.0, max_inventory_days=30.0,
+    )
+    assert len(result.transfer_lines) >= 1
+    total_after = sum(b.quantity for blist in result.updated_batches.values() for b in blist)
+    assert total_after == 202
 
 
 def test_deficit_below_threshold_after_sales_triggers_pending_replenishment():

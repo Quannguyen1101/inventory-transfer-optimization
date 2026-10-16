@@ -1,4 +1,11 @@
-"""BR-016 — genetic algorithm cho lập kế hoạch chuyển hàng, tôn trọng ràng buộc dùng chung."""
+"""BR-016 — genetic algorithm cho lập kế hoạch chuyển hàng, tôn trọng ràng buộc dùng chung.
+
+Ràng buộc được xử lý bằng repair khi giải mã gen (không dùng hàm phạt): mọi bộ gen đều cho ra kế hoạch
+khả thi — không rút quá lô hàng / quá phần dư của cửa hàng nguồn, không giao quá nhu cầu của cửa hàng
+thiếu, không vượt sức chứa xe mỗi tuyến. Hàm mục tiêu = chi phí tuyến vận chuyển + phạt thiếu hàng.
+"""
+import math
+from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date
 
@@ -6,12 +13,10 @@ import numpy as np
 
 from src.inventory_policy.classifier import StockPosition
 from src.optimization.constraints import (
-    Batch, TransferConstraints, TransferLine, filter_eligible_batches, route_totals,
+    CAPACITY_EPS, Batch, TransferConstraints, TransferLine, filter_eligible_batches,
 )
 
 _DEFICIT_PENALTY_PER_UNIT = 100_000.0
-_CAPACITY_PENALTY_PER_UNIT = 100_000.0
-_WASTE_PENALTY_PER_UNIT = 1.0
 
 
 @dataclass
@@ -23,6 +28,15 @@ class _Candidate:
     max_quantity: float
     weight_per_unit: float
     volume_per_unit: float
+
+
+@dataclass
+class _Limits:
+    batch_qty: dict[tuple[int, int, str], float]
+    surplus_qty: dict[tuple[int, int], float]
+    need: dict[tuple[int, int], int]
+    capacity_kg: float
+    capacity_l: float
 
 
 def _build_candidates(deficits, surpluses, batches_by_store_product, product_attrs,
@@ -49,67 +63,69 @@ def _build_candidates(deficits, surpluses, batches_by_store_product, product_att
     return candidates
 
 
-def _decode(genes: np.ndarray, candidates: list[_Candidate]) -> list[TransferLine]:
+def _build_limits(deficits, surpluses, batches_by_store_product, constraints: TransferConstraints) -> _Limits:
+    surplus_qty = {(s.store_id, s.product_id): max(0.0, s.current_stock - s.reorder_point) for s in surpluses}
+    batch_qty = {(b.store_id, b.product_id, b.batch_id): b.quantity
+                 for key in surplus_qty for b in batches_by_store_product.get(key, [])}
+    need = {(d.store_id, d.product_id): math.ceil(max(0.0, d.reorder_point - d.current_stock)) for d in deficits}
+    return _Limits(batch_qty, surplus_qty, need, constraints.vehicle_capacity_kg, constraints.vehicle_capacity_l)
+
+
+def _decode(genes: np.ndarray, candidates: list[_Candidate], limits: _Limits) -> list[TransferLine]:
+    """Repair: số lượng mỗi gen bị cắt theo phần còn lại của lô, của phần dư nguồn, của nhu cầu đích và
+    của sức chứa xe trên tuyến — nên kế hoạch giải mã ra luôn khả thi, số đơn vị luôn nguyên."""
+    batch_left = dict(limits.batch_qty)
+    surplus_left = dict(limits.surplus_qty)
+    need_left = dict(limits.need)
+    route_left: dict[tuple[int, int], list[float]] = {}
     lines = []
-    for gene, candidate in zip(genes, candidates):
-        quantity = int(round(gene))
+    for gene, c in zip(genes, candidates):
+        if gene < 1:
+            continue
+        batch_key = (c.from_store_id, c.product_id, c.batch_id)
+        surplus_key = (c.from_store_id, c.product_id)
+        need_key = (c.to_store_id, c.product_id)
+        route = route_left.setdefault((c.from_store_id, c.to_store_id), [limits.capacity_kg, limits.capacity_l])
+        quantity = min(gene, batch_left[batch_key], surplus_left[surplus_key], need_left[need_key])
+        if c.weight_per_unit > 0:
+            quantity = min(quantity, route[0] / c.weight_per_unit)
+        if c.volume_per_unit > 0:
+            quantity = min(quantity, route[1] / c.volume_per_unit)
+        quantity = math.floor(quantity + CAPACITY_EPS)
         if quantity <= 0:
             continue
+        batch_left[batch_key] -= quantity
+        surplus_left[surplus_key] -= quantity
+        need_left[need_key] -= quantity
+        route[0] -= quantity * c.weight_per_unit
+        route[1] -= quantity * c.volume_per_unit
         lines.append(TransferLine(
-            candidate.from_store_id, candidate.to_store_id, candidate.product_id, candidate.batch_id,
-            quantity=quantity, weight_kg=quantity * candidate.weight_per_unit,
-            volume_l=quantity * candidate.volume_per_unit,
+            c.from_store_id, c.to_store_id, c.product_id, c.batch_id,
+            quantity=quantity, weight_kg=quantity * c.weight_per_unit, volume_l=quantity * c.volume_per_unit,
         ))
     return lines
 
 
-def _fitness(genes: np.ndarray, candidates: list[_Candidate], deficits: list[StockPosition],
-             transport_cost: dict[tuple[int, int], float], constraints: TransferConstraints) -> float:
-    lines = _decode(genes, candidates)
+def _fitness(lines: list[TransferLine], limits: _Limits, transport_cost: dict[tuple[int, int], float]) -> float:
     routes_used = {(l.from_store_id, l.to_store_id) for l in lines}
     cost = sum(transport_cost.get(route, 0.0) for route in routes_used)
 
-    allocated_by_deficit: dict[tuple[int, int], float] = {}
+    delivered: dict[tuple[int, int], float] = defaultdict(float)
     for line in lines:
-        key = (line.to_store_id, line.product_id)
-        allocated_by_deficit[key] = allocated_by_deficit.get(key, 0.0) + line.quantity
-
-    deficit_penalty = 0.0
-    waste_penalty = 0.0
-    for deficit in deficits:
-        need = max(0.0, deficit.reorder_point - deficit.current_stock)
-        allocated = allocated_by_deficit.get((deficit.store_id, deficit.product_id), 0.0)
-        deficit_penalty += max(0.0, need - allocated) * _DEFICIT_PENALTY_PER_UNIT
-        waste_penalty += max(0.0, allocated - need) * _WASTE_PENALTY_PER_UNIT
-
-    capacity_penalty = 0.0
-    for weight_kg, volume_l in route_totals(lines).values():
-        over_weight = max(0.0, weight_kg - constraints.vehicle_capacity_kg)
-        over_volume = max(0.0, volume_l - constraints.vehicle_capacity_m3)
-        capacity_penalty += (over_weight + over_volume) * _CAPACITY_PENALTY_PER_UNIT
-
-    return cost + deficit_penalty + waste_penalty + capacity_penalty
+        delivered[(line.to_store_id, line.product_id)] += line.quantity
+    shortage = sum(need - delivered[key] for key, need in limits.need.items())
+    return cost + shortage * _DEFICIT_PENALTY_PER_UNIT
 
 
-def _clip_to_feasible(lines: list[TransferLine], constraints: TransferConstraints) -> list[TransferLine]:
-    """Co giãn tỷ lệ các dòng trên mỗi tuyến vượt sức chứa để đảm bảo kế hoạch trả về luôn khả thi."""
-    scale_by_route: dict[tuple[int, int], float] = {}
-    for route, (weight_kg, volume_l) in route_totals(lines).items():
-        scale_weight = constraints.vehicle_capacity_kg / weight_kg if weight_kg > constraints.vehicle_capacity_kg else 1.0
-        scale_volume = constraints.vehicle_capacity_m3 / volume_l if volume_l > constraints.vehicle_capacity_m3 else 1.0
-        scale_by_route[route] = min(scale_weight, scale_volume)
-
-    clipped = []
+def _apply_to_sources(lines: list[TransferLine], batches_by_store_product: dict[tuple[int, int], list[Batch]],
+                      surpluses: list[StockPosition]) -> None:
+    """Trừ số lượng đã chuyển khỏi lô nguồn và tồn kho cửa hàng nguồn (cùng hợp đồng với rule_based)."""
+    batch_by_key = {(b.store_id, b.product_id, b.batch_id): b
+                    for blist in batches_by_store_product.values() for b in blist}
+    surplus_by_key = {(s.store_id, s.product_id): s for s in surpluses}
     for line in lines:
-        scale = scale_by_route.get((line.from_store_id, line.to_store_id), 1.0)
-        quantity = int(round(line.quantity * scale))
-        if quantity <= 0:
-            continue
-        ratio = quantity / line.quantity
-        clipped.append(TransferLine(line.from_store_id, line.to_store_id, line.product_id, line.batch_id,
-                                     quantity=quantity, weight_kg=line.weight_kg * ratio,
-                                     volume_l=line.volume_l * ratio))
-    return clipped
+        batch_by_key[(line.from_store_id, line.product_id, line.batch_id)].quantity -= line.quantity
+        surplus_by_key[(line.from_store_id, line.product_id)].current_stock -= line.quantity
 
 
 def _tournament_select(population: np.ndarray, fitness_values: np.ndarray, rng: np.random.Generator,
@@ -145,17 +161,20 @@ def plan_transfers_ga(
     generations: int = 150,
     seed: int = 42,
 ) -> list[TransferLine]:
+    """Trừ số lượng đã chuyển khỏi Batch.quantity và StockPosition.current_stock của nguồn (giống
+    rule_based) — caller phải truyền bản sao riêng cho mỗi tuần."""
     rng = np.random.default_rng(seed)
     candidates = _build_candidates(deficits, surpluses, batches_by_store_product, product_attrs,
                                     constraints, current_date)
     if not candidates:
         return []
+    limits = _build_limits(deficits, surpluses, batches_by_store_product, constraints)
 
     max_quantities = np.array([c.max_quantity for c in candidates])
     population = rng.uniform(0, max_quantities, size=(population_size, len(candidates)))
 
     def fitness_of(genes: np.ndarray) -> float:
-        return _fitness(genes, candidates, deficits, transport_cost, constraints)
+        return _fitness(_decode(genes, candidates, limits), limits, transport_cost)
 
     best_genes = population[0]
     best_fitness = fitness_of(best_genes)
@@ -175,4 +194,6 @@ def plan_transfers_ga(
             new_population.append(child)
         population = np.array(new_population)
 
-    return _clip_to_feasible(_decode(best_genes, candidates), constraints)
+    plan = _decode(best_genes, candidates, limits)
+    _apply_to_sources(plan, batches_by_store_product, surpluses)
+    return plan

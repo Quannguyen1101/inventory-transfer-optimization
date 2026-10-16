@@ -49,6 +49,53 @@ def test_never_exceeds_vehicle_capacity():
     assert sum(l.weight_kg for l in plan) <= 50.0 + 1e-6
 
 
+def test_never_draws_more_than_surplus_available_across_deficits():
+    d1 = StockPosition(store_id=1, product_id=10, current_stock=0, reorder_point=25, safety_stock=5)
+    d3 = StockPosition(store_id=3, product_id=10, current_stock=0, reorder_point=25, safety_stock=5)
+    surplus = StockPosition(store_id=2, product_id=10, current_stock=50, reorder_point=20, safety_stock=5)  # dư 30
+    batches = {(2, 10): [Batch("B1", 2, 10, quantity=50, expiry_date=date(2026, 3, 1))]}
+    constraints = TransferConstraints(vehicle_capacity_kg=1000.0, vehicle_capacity_m3=1000.0,
+                                       delivery_schedule={(2, 1): ["Mon"], (2, 3): ["Mon"]}, min_shelf_life_days=7)
+    plan = plan_transfers_ga(
+        deficits=[d1, d3], surpluses=[surplus], batches_by_store_product=batches,
+        transport_cost={(2, 1): 1_000.0, (2, 3): 1_000.0}, product_attrs={10: (1.0, 1.0)},
+        constraints=constraints, current_date=date(2026, 1, 5),
+        population_size=20, generations=30, seed=1,
+    )
+    assert sum(l.quantity for l in plan) <= 30
+
+
+def test_deducts_transferred_quantity_from_source_like_rule_based():
+    deficit = StockPosition(store_id=1, product_id=10, current_stock=5, reorder_point=25, safety_stock=10)
+    surplus = StockPosition(store_id=2, product_id=10, current_stock=100, reorder_point=20, safety_stock=10)
+    batches = {(2, 10): [Batch("B1", 2, 10, quantity=50, expiry_date=date(2026, 3, 1))]}
+    plan = plan_transfers_ga(
+        deficits=[deficit], surpluses=[surplus], batches_by_store_product=batches,
+        transport_cost={(2, 1): 50_000.0}, product_attrs={10: (1.0, 1.0)},
+        constraints=_base_constraints(), current_date=date(2026, 1, 5),
+        population_size=20, generations=30, seed=1,
+    )
+    transferred = sum(l.quantity for l in plan)
+    assert transferred > 0
+    assert batches[(2, 10)][0].quantity == 50 - transferred
+    assert surplus.current_stock == 100 - transferred
+
+
+def test_caps_quantity_by_volume_in_liters():
+    deficit = StockPosition(store_id=1, product_id=10, current_stock=0, reorder_point=100, safety_stock=10)
+    surplus = StockPosition(store_id=2, product_id=10, current_stock=300, reorder_point=10, safety_stock=10)
+    batches = {(2, 10): [Batch("B1", 2, 10, quantity=200, expiry_date=date(2026, 3, 1))]}
+    constraints = TransferConstraints(vehicle_capacity_kg=1000.0, vehicle_capacity_m3=2.0,
+                                       delivery_schedule={(2, 1): ["Mon"]}, min_shelf_life_days=7)
+    plan = plan_transfers_ga(
+        deficits=[deficit], surpluses=[surplus], batches_by_store_product=batches,
+        transport_cost={(2, 1): 50_000.0}, product_attrs={10: (0.1, 25.0)},  # 2000 lít / 25 = 80 đv
+        constraints=constraints, current_date=date(2026, 1, 5),
+        population_size=20, generations=30, seed=1,
+    )
+    assert sum(l.quantity for l in plan) == 80
+
+
 def test_is_reproducible_with_same_seed():
     deficit = StockPosition(store_id=1, product_id=10, current_stock=5, reorder_point=25, safety_stock=10)
     surplus = StockPosition(store_id=2, product_id=10, current_stock=100, reorder_point=20, safety_stock=10)
