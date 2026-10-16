@@ -124,11 +124,11 @@ KPI tồn kho dư (`kpi_tracker.compute_excess_inventory_value`) đo phần tồ
 ## 4. CLI (kế thừa phong cách v1)
 
 ```
-python src/main.py --generate-data                          # UC-003
-python src/main.py --simulate --weeks 12 --algorithm all     # UC-001, mặc định: rule_based, cost_greedy, ga
-python src/main.py --simulate --algorithm rule_based         # AF-2 của UC-001: chỉ 1 thuật toán
-python src/main.py --dashboard-only                          # dựng lại dashboard từ results/ đã có
-python src/main.py --generate-data --simulate --scenario regional  # kịch bản dữ liệu regional (BRD Mục 7A.1)
+python -m src.main --generate-data                          # UC-003
+python -m src.main --simulate --weeks 12 --algorithm all     # UC-001, mặc định: rule_based, cost_greedy, ga
+python -m src.main --simulate --algorithm rule_based         # AF-2 của UC-001: chỉ 1 thuật toán
+python -m src.main --dashboard-only                          # dựng lại dashboard từ results/ đã có
+python -m src.main --generate-data --simulate --scenario regional  # kịch bản dữ liệu regional (BRD Mục 7A.1)
 ```
 
 Kịch bản `uniform` (mặc định) dùng `data/`, `results/`, `dashboard/`; kịch bản khác dùng thư mục con cùng tên (vd. `data/regional/`).
