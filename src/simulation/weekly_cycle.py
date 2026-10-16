@@ -161,6 +161,12 @@ def run_week(
         threshold_by_key = {key: min_inventory_days * avg for key, avg in avg_daily_demand_by_key.items()}
         target_by_key = {key: max_inventory_days * avg for key, avg in avg_daily_demand_by_key.items()}
     cost_by_product = {pid: attrs["cost"] for pid, attrs in product_attrs.items()}
+    # Thước đo tồn kho dư dùng chung cho cả 2 kịch bản (không dùng ngưỡng kích hoạt đặt hàng của từng
+    # kịch bản): phần tồn vượt lượng cần để phủ nhu cầu tới khi lô hàng kế tiếp kịp về.
+    excess_threshold_by_key = {
+        key: avg * (product_attrs[key[1]]["lead_time_days"] + REPLENISHMENT_REVIEW_PERIOD_DAYS)
+        for key, avg in avg_daily_demand_by_key.items()
+    }
 
     pending_replenishment = {
         key: compute_replenishment_order(stock, threshold_by_key.get(key, 0.0), target_by_key.get(key, 0.0))
@@ -172,7 +178,8 @@ def run_week(
         scenario=scenario,
         algorithm=algorithm if scenario == "optimized" else "none",
         stockout_rate=compute_stockout_rate(actual_demand_this_week, available_after_transfer),
-        excess_inventory_value=compute_excess_inventory_value(end_of_week_stock, threshold_by_key, cost_by_product),
+        excess_inventory_value=compute_excess_inventory_value(end_of_week_stock, excess_threshold_by_key,
+                                                              cost_by_product),
         transport_cost=compute_transport_cost(transfer_lines, transport_cost_matrix),
         mape=compute_mape(forecast_weekly, actual_demand_this_week),
     )

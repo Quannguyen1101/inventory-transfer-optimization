@@ -113,6 +113,22 @@ def test_ga_weighs_route_cost_against_lost_margin_while_rule_based_does_not():
     assert run("ga").transfer_lines == []
 
 
+@pytest.mark.parametrize("scenario", ["baseline", "optimized"])
+def test_excess_inventory_uses_same_yardstick_in_both_scenarios(scenario):
+    # Thước chung: tồn vượt nhu cầu TB x (lead time 2 + chu kỳ review 7) = 10 x 9 = 90 đv.
+    # Tồn 200, không bán, không chuyển -> dư 110 đv x giá vốn 10.000đ = 1.100.000đ ở cả 2 kịch bản.
+    history = pd.Series([10.0] * 30)
+    batches = {(1, 10): [Batch("B1", 1, 10, quantity=200, expiry_date=date(2026, 6, 1))]}
+    result = run_week(
+        week_index=1, current_date=date(2026, 1, 5), scenario=scenario, algorithm="rule_based",
+        batches=batches, sales_history={(1, 10): history}, actual_demand_this_week={},
+        product_attrs=_product_attrs(), distance_km={}, transport_cost_matrix={}, delivery_schedule={},
+        vehicle_capacity_kg=500.0, vehicle_capacity_m3=2.0, min_shelf_life_days=7,
+        min_inventory_days=7.0, max_inventory_days=30.0,
+    )
+    assert result.kpi.excess_inventory_value == pytest.approx(1_100_000.0)
+
+
 def test_deficit_below_threshold_after_sales_triggers_pending_replenishment():
     history = pd.Series([10.0] * 30)
     batches = {(1, 10): [Batch("B1", 1, 10, quantity=5, expiry_date=date(2026, 6, 1))]}
