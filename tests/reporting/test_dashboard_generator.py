@@ -37,6 +37,8 @@ def test_each_line_keeps_a_fixed_color_per_entity(tmp_path):
     generate_dashboard(pd.concat([df, ga_rows], ignore_index=True), output_path)
     content = output_path.read_text(encoding="utf-8")
     assert '"line":{"color":"#2a78d6","width":2},"marker":{"size":8},"mode":"lines+markers","name":"optimized (ga)"' in content
+    # GA vẽ sau cùng để không bị các đường trùng giá trị che mất
+    assert content.index('"name":"optimized (rule_based)"') < content.index('"name":"optimized (ga)"')
 
 
 def test_dashboard_is_self_contained_no_cdn(tmp_path):

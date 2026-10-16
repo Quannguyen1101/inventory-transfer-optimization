@@ -20,6 +20,8 @@ _COLORS = {
     "optimized (rule_based)": "#1baf7a",
     "optimized (cost_greedy)": "#eda100",
 }
+# Thứ tự vẽ: GA sau cùng để nằm trên các đường trùng giá trị (stockout, MAPE thường bằng nhau).
+_DRAW_ORDER = ["baseline", "optimized (rule_based)", "optimized (cost_greedy)", "optimized (ga)"]
 
 
 def generate_dashboard(kpi_df: pd.DataFrame, output_path: Path) -> None:
@@ -32,7 +34,9 @@ def generate_dashboard(kpi_df: pd.DataFrame, output_path: Path) -> None:
     labels = kpi_df["scenario"].where(kpi_df["algorithm"] == "none",
                                       kpi_df["scenario"] + " (" + kpi_df["algorithm"] + ")")
     for kpi_col, (row, col) in zip(_KPI_COLUMNS, _POSITIONS):
-        for label in sorted(labels.unique()):
+        present = set(labels.unique())
+        ordered = [l for l in _DRAW_ORDER if l in present] + sorted(present - set(_DRAW_ORDER))
+        for label in ordered:
             subset = kpi_df[labels == label].groupby("week", as_index=False)[kpi_col].mean()
             fig.add_trace(
                 go.Scatter(x=subset["week"], y=subset[kpi_col], mode="lines+markers", name=label,
