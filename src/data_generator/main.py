@@ -17,12 +17,22 @@ from src.data_generator.store_generator import generate_stores
 
 _COST_PER_KM_VND = 5000.0
 
+# uniform: nhu cầu gần đồng đều giữa cửa hàng, tồn kho đầu kỳ khớp nhu cầu từng cửa hàng, lịch giao
+#          mọi cặp cửa hàng (kể cả liên tỉnh).
+# regional: nhu cầu dị biệt mạnh giữa cửa hàng, tồn kho cấp tập trung theo trung bình sản phẩm, chỉ
+#          chuyển hàng nội thành — tình huống mà chuyển hàng ngang có nhiều việc để làm.
+_SCENARIOS = {
+    "uniform": dict(store_demand_sigma=None, allocation="store", same_city_only=False),
+    "regional": dict(store_demand_sigma=0.8, allocation="product_mean", same_city_only=True),
+}
+
 
 def run_data_generation(output_dir: Path, seed: int = config.RANDOM_SEED,
-                         num_weeks: int = config.TOTAL_DATA_WEEKS) -> None:
+                         num_weeks: int = config.TOTAL_DATA_WEEKS, scenario: str = "uniform") -> None:
     """`num_weeks` mặc định = HISTORY_WEEKS + SIMULATION_WEEKS: 52 tuần đầu là lịch sử mà
     forecaster được huấn luyện trên, 12 tuần cuối là nhu cầu thực tế "tương lai" mà
     `simulation.rolling_simulator` tiết lộ dần từng tuần khi chạy UC-001."""
+    options = _SCENARIOS[scenario]
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     rng = np.random.default_rng(seed)
@@ -31,11 +41,15 @@ def run_data_generation(output_dir: Path, seed: int = config.RANDOM_SEED,
 
     stores = generate_stores(config.NUM_STORES, config.CITIES, config.CITY_COORDINATES, rng)
     products = generate_products(config.NUM_PRODUCTS, config.CATEGORIES, rng)
-    sales = generate_sales_data(stores, products, num_weeks, SalesGenConfig(), rng, start_date=start_date)
-    batches = generate_inventory_batches(stores, products, sales, as_of_date, rng)
+    sales = generate_sales_data(stores, products, num_weeks,
+                                SalesGenConfig(store_demand_sigma=options["store_demand_sigma"]),
+                                rng, start_date=start_date)
+    batches = generate_inventory_batches(stores, products, sales, as_of_date, rng,
+                                         allocation=options["allocation"])
     distance = generate_distance_matrix(stores)
     transport_cost = generate_transport_cost_matrix(distance, _COST_PER_KM_VND)
-    delivery_schedule = generate_delivery_schedule(stores, config.DELIVERY_DAYS_PER_WEEK, rng)
+    delivery_schedule = generate_delivery_schedule(stores, config.DELIVERY_DAYS_PER_WEEK, rng,
+                                                   same_city_only=options["same_city_only"])
 
     stores.to_csv(output_dir / "stores.csv", index=False)
     products.to_csv(output_dir / "products.csv", index=False)
@@ -51,8 +65,9 @@ def _cli() -> None:
     parser.add_argument("--output-dir", type=Path, default=config.DATA_DIR)
     parser.add_argument("--seed", type=int, default=config.RANDOM_SEED)
     parser.add_argument("--weeks", type=int, default=config.TOTAL_DATA_WEEKS)
+    parser.add_argument("--scenario", choices=list(_SCENARIOS), default="uniform")
     args = parser.parse_args()
-    run_data_generation(args.output_dir, args.seed, args.weeks)
+    run_data_generation(args.output_dir, args.seed, args.weeks, args.scenario)
     print(f"Data generated at {args.output_dir}")
 
 

@@ -34,3 +34,12 @@ def test_delivery_schedule_has_fixed_days_per_route():
     assert len(df) == len(stores) * (len(stores) - 1)
     for _, row in df.iterrows():
         assert len(row["allowed_days"].split(",")) == 2
+
+
+def test_delivery_schedule_same_city_only_drops_cross_city_routes():
+    rng_stores = np.random.default_rng(42)
+    stores = generate_stores(6, config.CITIES, config.CITY_COORDINATES, rng_stores)  # 2 cửa hàng/thành phố
+    df = generate_delivery_schedule(stores, days_per_week=2, rng=np.random.default_rng(42), same_city_only=True)
+    city = stores.set_index("store_id")["city"]
+    assert len(df) == 3 * 2  # mỗi thành phố 2 cửa hàng -> 2 tuyến có hướng
+    assert (df["from_store_id"].map(city) == df["to_store_id"].map(city)).all()

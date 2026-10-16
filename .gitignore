@@ -2,9 +2,9 @@ __pycache__/
 *.pyc
 .pytest_cache/
 .venv/
-data/*.csv
-results/*.csv
-dashboard/*.html
+data/**/*.csv
+results/**/*.csv
+dashboard/**/*.html
 !data/.gitkeep
 !results/.gitkeep
 !dashboard/.gitkeep

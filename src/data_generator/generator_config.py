@@ -11,3 +11,6 @@ class SalesGenConfig:
     promotion_uplift: float = 0.5
     promotion_duration_days: int = 7
     noise_std_ratio: float = 0.15
+    # None: hệ số nhu cầu theo cửa hàng ~ uniform(0.7, 1.3) (kịch bản uniform);
+    # số dương: ~ lognormal(0, sigma) — nhu cầu dị biệt mạnh giữa các cửa hàng (kịch bản regional).
+    store_demand_sigma: float | None = None

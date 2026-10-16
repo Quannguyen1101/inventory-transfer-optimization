@@ -36,11 +36,16 @@ def generate_transport_cost_matrix(distance_df: pd.DataFrame, cost_per_km: float
     return df[["from_store_id", "to_store_id", "transport_cost"]]
 
 
-def generate_delivery_schedule(stores_df: pd.DataFrame, days_per_week: int, rng: np.random.Generator) -> pd.DataFrame:
+def generate_delivery_schedule(stores_df: pd.DataFrame, days_per_week: int, rng: np.random.Generator,
+                               same_city_only: bool = False) -> pd.DataFrame:
+    """same_city_only=True: chỉ có tuyến nội thành (kịch bản regional) — tuyến liên tỉnh tốn hàng triệu
+    VNĐ/chuyến nên không lên lịch chuyển hàng ngang giữa các thành phố."""
     records = []
     for _, a in stores_df.iterrows():
         for _, b in stores_df.iterrows():
             if a["store_id"] == b["store_id"]:
+                continue
+            if same_city_only and a["city"] != b["city"]:
                 continue
             days = sorted(rng.choice(_WEEKDAYS, size=days_per_week, replace=False),
                           key=_WEEKDAYS.index)

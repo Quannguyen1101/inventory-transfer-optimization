@@ -32,7 +32,10 @@ def generate_sales_data(stores_df: pd.DataFrame, products_df: pd.DataFrame, num_
         base_demand = rng.uniform(*gen_config.base_demand_range)
         promo_days = _pick_promotion_days(num_days, gen_config, rng)
         for _, store in stores_df.iterrows():
-            store_multiplier = rng.uniform(0.7, 1.3)
+            if gen_config.store_demand_sigma is None:
+                store_multiplier = rng.uniform(0.7, 1.3)
+            else:
+                store_multiplier = rng.lognormal(0.0, gen_config.store_demand_sigma)
             for day_offset in range(num_days):
                 current_date = start_date + timedelta(days=day_offset)
                 weekday_mult = 1 + gen_config.seasonality_amplitude * (

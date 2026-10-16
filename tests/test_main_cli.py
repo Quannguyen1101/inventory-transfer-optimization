@@ -24,7 +24,22 @@ def test_simulate_flag_calls_run_simulation_with_parsed_args(monkeypatch):
     with patch("src.main.run_simulation") as mock_simulate:
         mock_simulate.return_value = _sample_kpi_df()
         main_module.main()
-        mock_simulate.assert_called_once_with(n_weeks=4, algorithm="rule_based", seed=config.RANDOM_SEED)
+        mock_simulate.assert_called_once_with(
+            n_weeks=4, algorithm="rule_based", seed=config.RANDOM_SEED, data_dir=config.DATA_DIR,
+            results_dir=config.RESULTS_DIR, dashboard_dir=config.DASHBOARD_DIR,
+        )
+
+
+def test_regional_scenario_uses_its_own_subdirectories(monkeypatch):
+    monkeypatch.setattr(sys, "argv", ["main.py", "--generate-data", "--simulate", "--scenario", "regional"])
+    with patch("src.main.run_data_generation") as mock_generate, patch("src.main.run_simulation") as mock_simulate:
+        mock_simulate.return_value = _sample_kpi_df()
+        main_module.main()
+        mock_generate.assert_called_once_with(config.DATA_DIR / "regional", seed=config.RANDOM_SEED,
+                                              scenario="regional")
+        assert mock_simulate.call_args.kwargs["data_dir"] == config.DATA_DIR / "regional"
+        assert mock_simulate.call_args.kwargs["results_dir"] == config.RESULTS_DIR / "regional"
+        assert mock_simulate.call_args.kwargs["dashboard_dir"] == config.DASHBOARD_DIR / "regional"
 
 
 def test_dashboard_only_flag_calls_generate_dashboard(monkeypatch, tmp_path):

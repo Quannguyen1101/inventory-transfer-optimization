@@ -11,6 +11,15 @@ def test_writes_all_expected_csv_files(tmp_path):
     assert expected_files <= actual_files
 
 
+def test_regional_scenario_only_schedules_same_city_routes(tmp_path):
+    import pandas as pd
+    run_data_generation(output_dir=tmp_path, seed=1, num_weeks=2, scenario="regional")
+    stores = pd.read_csv(tmp_path / "stores.csv").set_index("store_id")["city"]
+    schedule = pd.read_csv(tmp_path / "delivery_schedule.csv")
+    assert len(schedule) > 0
+    assert (schedule["from_store_id"].map(stores) == schedule["to_store_id"].map(stores)).all()
+
+
 def test_is_reproducible_with_same_seed(tmp_path):
     out1, out2 = tmp_path / "run1", tmp_path / "run2"
     out1.mkdir()

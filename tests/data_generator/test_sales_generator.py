@@ -46,6 +46,21 @@ def test_later_weeks_have_higher_average_demand_with_trend():
     assert second_half > first_half
 
 
+def test_store_demand_sigma_makes_demand_differ_strongly_between_stores():
+    def store_demand_cv(cfg):
+        rng = np.random.default_rng(42)
+        stores = generate_stores(20, config.CITIES, config.CITY_COORDINATES, rng)
+        products = generate_products(3, config.CATEGORIES, rng)
+        df = generate_sales_data(stores, products, num_weeks=2, gen_config=cfg, rng=rng,
+                                 start_date=date(2026, 1, 5))
+        per_store = df.groupby(["product_id", "store_id"])["quantity"].mean()
+        return per_store.groupby("product_id").agg(lambda s: s.std() / s.mean()).mean()
+
+    flat = dict(seasonality_amplitude=0.0, trend_weekly_growth=0.0, promotion_frequency_per_year=0,
+                noise_std_ratio=0.0)
+    assert store_demand_cv(SalesGenConfig(store_demand_sigma=0.8, **flat)) > 2 * store_demand_cv(SalesGenConfig(**flat))
+
+
 def test_some_days_are_flagged_as_promotion():
     rng = np.random.default_rng(42)
     stores, products = _sample_data(rng)
