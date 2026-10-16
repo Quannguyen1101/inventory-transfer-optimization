@@ -19,6 +19,17 @@ def test_writes_html_file(tmp_path):
     assert output_path.stat().st_size > 1000
 
 
+def test_dashboard_shows_each_algorithm_as_its_own_line(tmp_path):
+    df = _sample_kpi_df()
+    ga_rows = df[df["scenario"] == "optimized"].assign(algorithm="ga", stockout_rate=0.05)
+    output_path = tmp_path / "dashboard.html"
+    generate_dashboard(pd.concat([df, ga_rows], ignore_index=True), output_path)
+    content = output_path.read_text(encoding="utf-8")
+    assert '"name":"optimized (rule_based)"' in content
+    assert '"name":"optimized (ga)"' in content
+    assert '"name":"baseline"' in content
+
+
 def test_dashboard_is_self_contained_no_cdn(tmp_path):
     # Không kiểm tra "cdn.plot.ly" như một substring thô: file plotly.js minified nhúng sẵn
     # (include_plotlyjs=True) tự nó chứa chuỗi đó ở một chỗ nội bộ không liên quan đến việc
