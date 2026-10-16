@@ -36,8 +36,9 @@ inventory-transfer-optimization/
 │   │   ├── classifier.py
 │   │   └── replenishment.py       #   BR-025, BR-026 (đặt hàng bổ sung từ NCC, về sau 1 tuần)
 │   ├── optimization/              # BR-009–016
-│   │   ├── constraints.py         #   dùng chung cho cả 2 thuật toán (BR-015, BR-016)
+│   │   ├── constraints.py         #   dùng chung cho mọi thuật toán (BR-015, BR-016)
 │   │   ├── rule_based.py
+│   │   ├── cost_greedy.py         #   mốc so sánh công bằng cho GA (cùng thông tin chi phí)
 │   │   └── genetic_algorithm.py
 │   ├── simulation/                # UC-001, UC-002
 │   │   ├── weekly_cycle.py        #   UC-002
@@ -104,22 +105,27 @@ def is_feasible(transfer_plan, constraints) -> bool                             
 def run_week(state: WeekState, scenario: Literal["baseline", "optimized"], algorithm: str) -> WeekResult
 
 # simulation/rolling_simulator.py — UC-001
-def run_simulation(n_weeks: int = 12, algorithm: str = "both", seed: int = 42) -> SimulationResult
+def run_simulation(n_weeks: int = 12, algorithm: str = "all", seed: int = 42) -> SimulationResult
 ```
 
-Rule-based dùng `filter_eligible_batches`/`is_feasible` để lọc trước khi ghép (greedy: thiếu nhiều nhất trước, nguồn gần nhất trước, số đơn vị nguyên). Genetic algorithm nhận cùng `TransferConstraints`:
+Ba thuật toán chuyển hàng, cùng nhận `TransferConstraints`:
 
-- **Repair khi giải mã gen** (không dùng hàm phạt): số lượng mỗi gen bị cắt theo phần còn lại của lô, phần dư cửa hàng nguồn, nhu cầu cửa hàng đích và sức chứa xe tuyến — mọi cá thể đều là kế hoạch khả thi.
-- **Hàm mục tiêu** = tổng phí các tuyến sử dụng + số đơn vị còn thiếu so với reorder point × biên lợi nhuận sản phẩm (giá − giá vốn).
-- **Seed** cá thể đầu bằng nghiệm rule-based; elitism đảm bảo GA không tệ hơn rule-based theo hàm mục tiêu trên.
-- Đột biến có nhánh đưa gen về 0 (bỏ hẳn một tuyến) và khởi tạo quần thể thưa.
-- Cả 2 thuật toán đều trừ số lượng đã chuyển khỏi lô/tồn kho nguồn; `weekly_cycle` cộng vào cửa hàng đích.
+- **Rule-based** dùng `filter_eligible_batches`/`is_feasible` để lọc trước khi ghép (greedy: thiếu nhiều nhất trước, nguồn gần nhất trước, số đơn vị nguyên). Không xét phí tuyến.
+- **Cost-greedy**: thiếu hụt có giá trị thiếu hàng lớn nhất trước, nguồn có chi phí biên thấp nhất trước (tuyến đã mở = 0), chỉ mở chuyến mới khi số đơn vị bù được × biên lợi nhuận ≥ phí tuyến. Xét từng thiếu hụt riêng lẻ nên không thấy lợi ích gộp chuyến.
+- **Genetic algorithm**:
+  - **Repair khi giải mã gen** (không dùng hàm phạt): số lượng mỗi gen bị cắt theo phần còn lại của lô, phần dư cửa hàng nguồn, nhu cầu cửa hàng đích và sức chứa xe tuyến — mọi cá thể đều là kế hoạch khả thi.
+  - **Hàm mục tiêu** = tổng phí các tuyến sử dụng + số đơn vị còn thiếu so với reorder point × biên lợi nhuận sản phẩm (giá − giá vốn).
+  - **Seed** cá thể đầu bằng nghiệm rule-based và cost-greedy; elitism đảm bảo GA không tệ hơn heuristic tốt nhất theo hàm mục tiêu trên.
+  - Đột biến có nhánh đưa gen về 0 (bỏ hẳn một tuyến) và khởi tạo quần thể thưa.
+- Mọi thuật toán đều trừ số lượng đã chuyển khỏi lô/tồn kho nguồn; `weekly_cycle` cộng vào cửa hàng đích.
+
+KPI tồn kho dư (`kpi_tracker.compute_excess_inventory_value`) đo phần tồn cuối tuần vượt nhu cầu TB × (lead time + 7 ngày chu kỳ review) — cùng một thước cho baseline và tối ưu, tách khỏi ngưỡng kích hoạt đặt hàng của từng kịch bản.
 
 ## 4. CLI (kế thừa phong cách v1)
 
 ```
 python src/main.py --generate-data                          # UC-003
-python src/main.py --simulate --weeks 12 --algorithm both    # UC-001, mặc định
+python src/main.py --simulate --weeks 12 --algorithm all     # UC-001, mặc định: rule_based, cost_greedy, ga
 python src/main.py --simulate --algorithm rule_based         # AF-2 của UC-001: chỉ 1 thuật toán
 python src/main.py --dashboard-only                          # dựng lại dashboard từ results/ đã có
 python src/main.py --generate-data --simulate --scenario regional  # kịch bản dữ liệu regional (BRD Mục 7A.1)

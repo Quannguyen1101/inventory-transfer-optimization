@@ -6,7 +6,7 @@
 |---|---|
 | Tên dự án | Inventory Transfer Optimization System v2 |
 | Mã dự án | ITOS-V2 |
-| Phiên bản | 1.3 |
+| Phiên bản | 1.4 |
 | Ngày tạo | 2026-08-06 |
 | Tác giả | Chủ dự án (Portfolio Owner) |
 | Trạng thái | Draft |
@@ -19,6 +19,7 @@
 | 1.1 | 2026-08-06 | Chủ dự án | Giải quyết OQ-001 đến OQ-006 (dự án cá nhân, quyết định trực tiếp không cần khảo sát thêm); bổ sung Mục 7A tham số cấu hình |
 | 1.2 | 2026-08-12 | Chủ dự án | Bổ sung BR-025, BR-026 (đặt hàng bổ sung từ nhà cung cấp) sau khi kiểm thử thực tế phát hiện hệ thống không có nguồn bổ sung tồn kho bên ngoài, khiến 2 kịch bản baseline/tối ưu hội tụ về cùng kết quả trong simulation 12 tuần |
 | 1.3 | 2026-10-16 | Chủ dự án | Thay bảng kết quả thực đo (bảng cũ sai do lỗi đơn vị sức chứa xe và lỗi GA không trừ tồn nguồn); thêm kịch bản dữ liệu `regional` (Mục 7A.1); so sánh Rule-Based vs GA; thay giả thuyết nguyên nhân stockout bằng nguyên nhân đã kiểm chứng |
+| 1.4 | 2026-10-16 | Chủ dự án | Đo tồn kho dư bằng một thước chung cho mọi kịch bản; thêm phí cố định 200.000đ/chuyến (Mục 7A.2); thêm mốc so sánh Cost-Greedy; cập nhật bảng kết quả |
 
 ---
 
@@ -171,6 +172,7 @@ Hai kịch bản dữ liệu (cùng quy mô trên, chọn bằng `--scenario`):
 |---|---|
 | Sức chứa xe/chuyến | 500 kg **và** 2 m³ (giới hạn theo ngưỡng nào đạt trước) |
 | Lịch giao hàng | Mỗi cặp cửa hàng có lịch cố định 2 ngày/tuần, sinh ngẫu nhiên nhưng cố định theo seed cho từng tuyến |
+| Phí vận chuyển 1 chuyến | 200.000đ cố định (giả định: tài xế, bốc xếp, chi phí tối thiểu 1 chuyến van) + 5.000đ/km khoảng cách đường chim bay; tính 1 lần cho mỗi tuyến được dùng trong tuần |
 | Ngưỡng cận hạn loại trừ (BR-014) | Lô hàng còn hạn sử dụng < 7 ngày không được đưa vào kế hoạch chuyển |
 
 ### 7A.3 Service level theo danh mục hàng (giải quyết OQ-006)
@@ -237,35 +239,47 @@ Hai kịch bản dữ liệu (cùng quy mô trên, chọn bằng `--scenario`):
 
 **Kết quả thực đo (2026-10-16, full scale 20 cửa hàng/30 SKU/12 tuần, 2 kịch bản dữ liệu — xem Mục 7A.1):**
 
-> Bảng đo ngày 2026-08-12 trước đây đã bị **thay thế** vì sai: sức chứa xe bị so thể tích lít với đơn vị m³
-> (xe thực chất chỉ chở 2 lít) và GA không trừ tồn kho nguồn khi chuyển hàng (tạo thêm hàng). Cả hai lỗi đã
-> sửa, có test tái hiện.
+> Các bảng đo trước đây đã bị **thay thế** vì sai: sức chứa xe bị so thể tích lít với đơn vị m³ (xe thực chất
+> chỉ chở 2 lít), GA không trừ tồn kho nguồn khi chuyển hàng (tạo thêm hàng), và tồn kho dư của 2 kịch bản
+> được đo trên 2 ngưỡng khác nhau. Các lỗi đã sửa, có test tái hiện. Phí vận chuyển nay gồm phí cố định mỗi
+> chuyến (Mục 7A.2).
+>
+> Định nghĩa đo: *tồn kho dư* = giá trị (theo giá vốn) phần tồn cuối tuần vượt nhu cầu TB × (lead time + 7 ngày
+> chu kỳ review), cùng một thước cho mọi kịch bản. *Cost-Greedy* = heuristic dùng đúng thông tin GA dùng (phí
+> tuyến, biên lợi nhuận) nhưng quyết định từng thiếu hụt một — mốc so sánh công bằng cho GA.
 
-| KPI (TB 12 tuần) | Baseline | Optimized — Rule-Based | Optimized — GA | GA so với Rule-Based |
-|---|---|---|---|---|
-| *Kịch bản uniform* | | | | |
-| Stockout rate | 2.53% | 23.00% | 23.04% | +0.04 điểm % (tương đương) |
-| Excess inventory value | 32.50 tỷ | 1.808 tỷ | 1.811 tỷ | +0.2% (tương đương) |
-| Tổng transport cost 12 tuần | 0 | 68.3 triệu | **33.1 triệu** | **−51.5%** |
-| *Kịch bản regional* | | | | |
-| Stockout rate | 2.75% | 23.53% | 23.54% | +0.01 điểm % (tương đương) |
-| Excess inventory value | 45.14 tỷ | 5.450 tỷ | 5.475 tỷ | +0.5% (tương đương) |
-| Tổng transport cost 12 tuần | 0 | 14.4 triệu | 14.2 triệu | −1.4% |
+| KPI (TB 12 tuần) | Baseline | Rule-Based | Cost-Greedy | GA | GA so với Rule-Based / Cost-Greedy |
+|---|---|---|---|---|---|
+| *Kịch bản uniform* | | | | | |
+| Stockout rate | 2.53% | 23.00% | 23.00% | 23.00% | bằng nhau |
+| Tồn kho dư (TB/tuần) | 21.60 tỷ | 35.6 triệu | 35.6 triệu | 35.6 triệu | bằng nhau |
+| Tổng transport cost 12 tuần | 0 | 78.5 triệu | 67.8 triệu | **33.6 triệu** | **−57.3% / −50.5%** |
+| *Kịch bản regional* | | | | | |
+| Stockout rate | 2.75% | 23.53% | 23.46% | 23.42% | −0.11 / −0.04 điểm % |
+| Tồn kho dư (TB/tuần) | 30.66 tỷ | 2.012 tỷ | 2.001 tỷ | 1.997 tỷ | −0.7% / −0.2% |
+| Tổng transport cost 12 tuần | 0 | 120.4 triệu | 118.2 triệu | **111.4 triệu** | **−7.4% / −5.8%** |
 
 Nhận định:
-- **Baseline vs tối ưu:** tối ưu giảm tồn kho dư 88–94% nhưng stockout cao hơn ~9 lần — không đạt đồng thời cả 2
-  mục tiêu ban đầu; vẫn được **chấp nhận cho mục đích portfolio** (quyết định của chủ dự án, 2026-08-12).
+- **Baseline vs tối ưu:** tối ưu giảm tồn kho dư 93–99.8% (đo cùng một thước) nhưng stockout cao hơn ~9 lần —
+  không đạt đồng thời cả 2 mục tiêu ban đầu; vẫn được **chấp nhận cho mục đích portfolio** (quyết định của chủ
+  dự án, 2026-08-12). Baseline ít hết hàng vì luôn đặt hàng lên mức 30 ngày nhu cầu, đổi lại giữ lượng tồn rất lớn.
   Nguyên nhân stockout cao **đã được kiểm chứng** (thay cho giả thuyết "do trend" ghi trước đây): reorder point
   (BR-007) chỉ phủ nhu cầu trong lead time 2–7 ngày, trong khi hệ thống chỉ review mỗi 7 ngày — 80% số
   key có reorder point thấp hơn nhu cầu 1 tuần (trung vị 51%). Key có tồn kho nằm giữa reorder point và nhu
   cầu 1 tuần không được đặt hàng nhưng hết hàng ngay trong tuần. Hướng sửa (chưa làm): ngưỡng kích hoạt
   theo chu kỳ review = nhu cầu TB × (lead time + 7) + z·σ·√(lead time + 7).
-- **GA vs Rule-Based:** GA (repair ràng buộc, seed bằng nghiệm rule-based, chi phí thiếu hàng = biên lợi nhuận)
-  không tệ hơn rule-based theo hàm mục tiêu của nó, và **giảm một nửa chi phí vận chuyển ở kịch bản uniform**
-  bằng cách bỏ những chuyến liên tỉnh/chuyến nhỏ mà phí tuyến lớn hơn biên lợi nhuận số hàng bù được. Ở kịch
-  bản regional (chỉ tuyến nội thành, phí rẻ) gần như mọi chuyến đều đáng chạy nên hai thuật toán gần như
-  trùng nhau. GA **không cải thiện được stockout/excess** vì cả hai thuật toán đều chỉ bù đến reorder point (vốn
-  thấp hơn nhu cầu 1 tuần, xem trên), nên chuyển hàng ngang gần như không đổi được việc hết hàng trong tuần.
+- **GA vs heuristic:** GA (repair ràng buộc, seed bằng nghiệm Rule-Based và Cost-Greedy, chi phí thiếu hàng =
+  biên lợi nhuận) không tệ hơn heuristic tốt nhất theo hàm mục tiêu của nó, và **giảm 50–57% chi phí vận chuyển
+  ở kịch bản uniform, 6–7% ở kịch bản regional**, với stockout và tồn kho dư bằng hoặc nhỉnh hơn một chút.
+  Phần lớn mức tiết kiệm **không** đến từ việc "biết tính chi phí": Cost-Greedy chỉ đạt được 24% mức tiết kiệm
+  của GA so với Rule-Based. Phần còn lại đến từ việc **gộp nhiều thiếu hụt nhỏ lên cùng một chuyến** để chia
+  phí cố định của chuyến — tương tác mà heuristic xét từng thiếu hụt riêng lẻ không thấy được (có test minh họa:
+  2 mặt hàng thiếu 3 đv, riêng lẻ không đáng chạy xe, gộp lại thì có lời). Ở kịch bản regional (chỉ tuyến nội
+  thành, nhiều thiếu hụt lớn) phần lớn chuyến đều đáng chạy nên dư địa tối ưu nhỏ hơn.
+- GA **không cải thiện đáng kể stockout/tồn kho dư** vì mọi thuật toán chỉ bù đến reorder point (vốn thấp hơn
+  nhu cầu 1 tuần, xem trên) và nhà cung cấp giả lập luôn giao đủ sau 1 tuần — chuyển hàng ngang gần như không
+  đổi được việc hết hàng trong tuần. Đây là giới hạn của chính sách tồn kho và mô hình nguồn cung, không phải
+  của thuật toán.
 
 ## 13. Open Questions
 
