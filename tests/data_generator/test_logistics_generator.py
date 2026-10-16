@@ -27,6 +27,14 @@ def test_transport_cost_scales_with_distance():
     assert (merged["transport_cost"] == merged["distance_km"] * 5000.0).all()
 
 
+def test_transport_cost_includes_fixed_cost_per_trip():
+    stores = _stores()
+    distance_df = generate_distance_matrix(stores)
+    cost_df = generate_transport_cost_matrix(distance_df, cost_per_km=5000.0, fixed_cost_per_trip=200_000.0)
+    merged = distance_df.merge(cost_df, on=["from_store_id", "to_store_id"])
+    assert (merged["transport_cost"] == 200_000.0 + merged["distance_km"] * 5000.0).all()
+
+
 def test_delivery_schedule_has_fixed_days_per_route():
     stores = _stores()
     rng = np.random.default_rng(42)

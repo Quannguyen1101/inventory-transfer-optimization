@@ -16,6 +16,7 @@ from src.data_generator.sales_generator import generate_sales_data
 from src.data_generator.store_generator import generate_stores
 
 _COST_PER_KM_VND = 5000.0
+_FIXED_COST_PER_TRIP_VND = 200_000.0  # giả định: tài xế, bốc xếp, chi phí tối thiểu của 1 chuyến van
 
 # uniform: nhu cầu gần đồng đều giữa cửa hàng, tồn kho đầu kỳ khớp nhu cầu từng cửa hàng, lịch giao
 #          mọi cặp cửa hàng (kể cả liên tỉnh).
@@ -47,7 +48,7 @@ def run_data_generation(output_dir: Path, seed: int = config.RANDOM_SEED,
     batches = generate_inventory_batches(stores, products, sales, as_of_date, rng,
                                          allocation=options["allocation"])
     distance = generate_distance_matrix(stores)
-    transport_cost = generate_transport_cost_matrix(distance, _COST_PER_KM_VND)
+    transport_cost = generate_transport_cost_matrix(distance, _COST_PER_KM_VND, _FIXED_COST_PER_TRIP_VND)
     delivery_schedule = generate_delivery_schedule(stores, config.DELIVERY_DAYS_PER_WEEK, rng,
                                                    same_city_only=options["same_city_only"])
 

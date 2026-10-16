@@ -30,9 +30,11 @@ def generate_distance_matrix(stores_df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(records)
 
 
-def generate_transport_cost_matrix(distance_df: pd.DataFrame, cost_per_km: float) -> pd.DataFrame:
+def generate_transport_cost_matrix(distance_df: pd.DataFrame, cost_per_km: float,
+                                   fixed_cost_per_trip: float = 0.0) -> pd.DataFrame:
+    """Phí 1 chuyến = phí cố định (tài xế, bốc xếp, tối thiểu mỗi chuyến) + phí theo km."""
     df = distance_df.copy()
-    df["transport_cost"] = df["distance_km"] * cost_per_km
+    df["transport_cost"] = fixed_cost_per_trip + df["distance_km"] * cost_per_km
     return df[["from_store_id", "to_store_id", "transport_cost"]]
 
 
