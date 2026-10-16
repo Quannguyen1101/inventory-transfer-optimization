@@ -13,6 +13,13 @@ _KPI_TITLES = {
     "mape": "Forecast MAPE",
 }
 _POSITIONS = [(1, 1), (1, 2), (2, 1), (2, 2)]
+# Màu cố định theo thực thể (không theo thứ tự xuất hiện), đã kiểm định phân biệt được với người mù màu.
+_COLORS = {
+    "optimized (ga)": "#2a78d6",
+    "baseline": "#eb6834",
+    "optimized (rule_based)": "#1baf7a",
+    "optimized (cost_greedy)": "#eda100",
+}
 
 
 def generate_dashboard(kpi_df: pd.DataFrame, output_path: Path) -> None:
@@ -29,11 +36,12 @@ def generate_dashboard(kpi_df: pd.DataFrame, output_path: Path) -> None:
             subset = kpi_df[labels == label].groupby("week", as_index=False)[kpi_col].mean()
             fig.add_trace(
                 go.Scatter(x=subset["week"], y=subset[kpi_col], mode="lines+markers", name=label,
+                           line=dict(color=_COLORS.get(label), width=2), marker=dict(size=8),
                            legendgroup=label, showlegend=(row, col) == (1, 1)),
                 row=row, col=col,
             )
 
     fig.update_layout(title="Inventory Transfer Optimization — Weekly KPI (Baseline vs Rule-Based vs GA)",
-                       height=700, width=1000)
+                       height=700, width=1000, template="plotly_white")
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.write_html(str(output_path), include_plotlyjs=True, full_html=True)
