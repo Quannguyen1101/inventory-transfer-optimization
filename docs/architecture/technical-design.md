@@ -83,7 +83,8 @@ def compute_safety_stock(demand_std, z_score, lead_time_days) -> float
 def compute_reorder_point(avg_demand, lead_time_days, safety_stock) -> float
 
 # inventory_policy/replenishment.py — BR-025, BR-026 (order-up-to policy)
-def compute_replenishment_order(current_stock, reorder_point, target_multiplier=2.0) -> float
+def compute_replenishment_order(current_stock, reorder_threshold, target_level) -> float
+# target_level (tối ưu) = nhu cầu TB x (lead_time + chu kỳ review 7 ngày) + safety_stock
 # Đơn hàng đặt tuần t được cộng vào tồn kho đầu tuần t+1 (rolling_simulator truyền qua tham số
 # incoming_replenishment của run_week) — độ trễ 1 tuần xấp xỉ lead_time_days (đều ≤ 7 ngày).
 
@@ -94,6 +95,7 @@ class TransferConstraints:
     vehicle_capacity_m3: float
     delivery_schedule: dict[tuple[int, int], list[str]]
     min_shelf_life_days: int
+    vehicle_capacity_l: float  # property = m3 x 1000; volume_l của sản phẩm tính bằng lít
 
 def filter_eligible_batches(batches, min_shelf_life_days, current_date) -> list  # FEFO + loại cận hạn (BR-013, BR-014)
 def is_feasible(transfer_plan, constraints) -> bool                              # sức chứa xe + lịch giao hàng (BR-010, BR-011)
@@ -105,7 +107,13 @@ def run_week(state: WeekState, scenario: Literal["baseline", "optimized"], algor
 def run_simulation(n_weeks: int = 12, algorithm: str = "both", seed: int = 42) -> SimulationResult
 ```
 
-Rule-based dùng `filter_eligible_batches`/`is_feasible` để lọc trước khi ghép (greedy). Genetic algorithm nhận cùng `TransferConstraints`, tính penalty trong hàm fitness khi vi phạm.
+Rule-based dùng `filter_eligible_batches`/`is_feasible` để lọc trước khi ghép (greedy: thiếu nhiều nhất trước, nguồn gần nhất trước, số đơn vị nguyên). Genetic algorithm nhận cùng `TransferConstraints`:
+
+- **Repair khi giải mã gen** (không dùng hàm phạt): số lượng mỗi gen bị cắt theo phần còn lại của lô, phần dư cửa hàng nguồn, nhu cầu cửa hàng đích và sức chứa xe tuyến — mọi cá thể đều là kế hoạch khả thi.
+- **Hàm mục tiêu** = tổng phí các tuyến sử dụng + số đơn vị còn thiếu so với reorder point × biên lợi nhuận sản phẩm (giá − giá vốn).
+- **Seed** cá thể đầu bằng nghiệm rule-based; elitism đảm bảo GA không tệ hơn rule-based theo hàm mục tiêu trên.
+- Đột biến có nhánh đưa gen về 0 (bỏ hẳn một tuyến) và khởi tạo quần thể thưa.
+- Cả 2 thuật toán đều trừ số lượng đã chuyển khỏi lô/tồn kho nguồn; `weekly_cycle` cộng vào cửa hàng đích.
 
 ## 4. CLI (kế thừa phong cách v1)
 
@@ -114,7 +122,10 @@ python src/main.py --generate-data                          # UC-003
 python src/main.py --simulate --weeks 12 --algorithm both    # UC-001, mặc định
 python src/main.py --simulate --algorithm rule_based         # AF-2 của UC-001: chỉ 1 thuật toán
 python src/main.py --dashboard-only                          # dựng lại dashboard từ results/ đã có
+python src/main.py --generate-data --simulate --scenario regional  # kịch bản dữ liệu regional (BRD Mục 7A.1)
 ```
+
+Kịch bản `uniform` (mặc định) dùng `data/`, `results/`, `dashboard/`; kịch bản khác dùng thư mục con cùng tên (vd. `data/regional/`).
 
 ## 5. Xử lý lỗi (bám theo Exception Flows đã đặc tả trong use case)
 

@@ -6,7 +6,7 @@
 |---|---|
 | Tên dự án | Inventory Transfer Optimization System v2 |
 | Mã dự án | ITOS-V2 |
-| Phiên bản | 1.2 |
+| Phiên bản | 1.3 |
 | Ngày tạo | 2026-08-06 |
 | Tác giả | Chủ dự án (Portfolio Owner) |
 | Trạng thái | Draft |
@@ -18,6 +18,7 @@
 | 1.0 | 2026-08-06 | Chủ dự án | Khởi tạo BRD từ ghi chú yêu cầu ban đầu |
 | 1.1 | 2026-08-06 | Chủ dự án | Giải quyết OQ-001 đến OQ-006 (dự án cá nhân, quyết định trực tiếp không cần khảo sát thêm); bổ sung Mục 7A tham số cấu hình |
 | 1.2 | 2026-08-12 | Chủ dự án | Bổ sung BR-025, BR-026 (đặt hàng bổ sung từ nhà cung cấp) sau khi kiểm thử thực tế phát hiện hệ thống không có nguồn bổ sung tồn kho bên ngoài, khiến 2 kịch bản baseline/tối ưu hội tụ về cùng kết quả trong simulation 12 tuần |
+| 1.3 | 2026-10-16 | Chủ dự án | Thay bảng kết quả thực đo (bảng cũ sai do lỗi đơn vị sức chứa xe và lỗi GA không trừ tồn nguồn); thêm kịch bản dữ liệu `regional` (Mục 7A.1); so sánh Rule-Based vs GA; thay giả thuyết nguyên nhân stockout bằng nguyên nhân đã kiểm chứng |
 
 ---
 
@@ -157,6 +158,13 @@ Các tham số dưới đây giải quyết OQ-001, OQ-003, OQ-004, OQ-006 (xem 
 | Danh mục hàng | 5 danh mục: Thiết yếu, Đồ uống, Đồ khô, Đông lạnh, Gia dụng |
 | Lịch sử bán hàng | 52 tuần (364 ngày) dữ liệu synthetic — đủ để Holt-Winters học được mùa vụ theo tuần và xu hướng, trước khi bước vào 12 tuần rolling simulation forward |
 
+Hai kịch bản dữ liệu (cùng quy mô trên, chọn bằng `--scenario`):
+
+| Kịch bản | Nhu cầu giữa các cửa hàng | Tồn kho đầu kỳ | Lịch chuyển hàng |
+|---|---|---|---|
+| `uniform` (mặc định) | Gần đồng đều (hệ số ~ uniform 0.7–1.3) | Theo nhu cầu riêng từng cửa hàng | Mọi cặp cửa hàng, kể cả liên tỉnh |
+| `regional` | Dị biệt mạnh (hệ số ~ lognormal σ = 0.8) | Cấp tập trung theo nhu cầu TB sản phẩm | Chỉ nội thành |
+
 ### 7A.2 Ràng buộc vận hành (giải quyết OQ-003)
 
 | Ràng buộc | Giá trị |
@@ -227,15 +235,37 @@ Các tham số dưới đây giải quyết OQ-001, OQ-003, OQ-004, OQ-006 (xem 
   - Sai số dự báo (MAPE) trung bình toàn hệ thống: dưới 20%.
   - Nếu một chỉ tiêu không đạt ngưỡng trên nhưng xu hướng cải thiện nhất quán và giải thích được qua các tuần, vẫn coi là đạt tiêu chí thành công cho mục đích demo/portfolio.
 
-**Kết quả thực đo (2026-08-12, full scale 20 cửa hàng/30 SKU/12 tuần, cả 2 thuật toán):**
+**Kết quả thực đo (2026-10-16, full scale 20 cửa hàng/30 SKU/12 tuần, 2 kịch bản dữ liệu — xem Mục 7A.1):**
 
-| KPI | Baseline | Optimized | Nhận định |
-|---|---|---|---|
-| Stockout rate (TB) | 2.5% | 22.8% | Không đạt ngưỡng ↓30% — **cao hơn** baseline |
-| Excess inventory value (TB) | 32.5 tỷ VNĐ | 1.7 tỷ VNĐ | Vượt xa ngưỡng ↓20% — **giảm 95%** |
-| Transport cost | 0 (không chuyển hàng) | ~66.5 triệu/tuần | Baseline không có, không so sánh trực tiếp được |
+> Bảng đo ngày 2026-08-12 trước đây đã bị **thay thế** vì sai: sức chứa xe bị so thể tích lít với đơn vị m³
+> (xe thực chất chỉ chở 2 lít) và GA không trừ tồn kho nguồn khi chuyển hàng (tạo thêm hàng). Cả hai lỗi đã
+> sửa, có test tái hiện.
 
-Không đạt đồng thời cả 2 mục tiêu ban đầu, nhưng kết quả vẫn được **chấp nhận là thành công cho mục đích portfolio** (quyết định của chủ dự án, 2026-08-12) vì thể hiện đúng một đánh đổi có thật trong quản trị tồn kho: chính sách baseline (ngưỡng days-of-inventory cố định, đệm rộng 30 ngày) tránh được hết hàng bằng cách chôn vốn rất lớn vào tồn kho dư; chính sách tối ưu (reorder point theo thống kê, đệm sát service level 90-98%) giải phóng vốn mạnh (giảm 95% tồn kho dư) nhưng chấp nhận rủi ro thiếu hàng cao hơn mức lý thuyết ứng với service level đã cấu hình. Nguyên nhân stockout cao hơn dự kiến nhiều khả năng do `safety_stock` chỉ tính độ lệch chuẩn nhu cầu trên window 28 ngày gần nhất, chưa hiệu chỉnh theo xu hướng tăng trưởng nhu cầu (trend) — cơ hội cải tiến trong tương lai, không chặn việc coi dự án là hoàn thành.
+| KPI (TB 12 tuần) | Baseline | Optimized — Rule-Based | Optimized — GA | GA so với Rule-Based |
+|---|---|---|---|---|
+| *Kịch bản uniform* | | | | |
+| Stockout rate | 2.53% | 23.00% | 23.04% | +0.04 điểm % (tương đương) |
+| Excess inventory value | 32.50 tỷ | 1.808 tỷ | 1.811 tỷ | +0.2% (tương đương) |
+| Tổng transport cost 12 tuần | 0 | 68.3 triệu | **33.1 triệu** | **−51.5%** |
+| *Kịch bản regional* | | | | |
+| Stockout rate | 2.75% | 23.53% | 23.54% | +0.01 điểm % (tương đương) |
+| Excess inventory value | 45.14 tỷ | 5.450 tỷ | 5.475 tỷ | +0.5% (tương đương) |
+| Tổng transport cost 12 tuần | 0 | 14.4 triệu | 14.2 triệu | −1.4% |
+
+Nhận định:
+- **Baseline vs tối ưu:** tối ưu giảm tồn kho dư 88–94% nhưng stockout cao hơn ~9 lần — không đạt đồng thời cả 2
+  mục tiêu ban đầu; vẫn được **chấp nhận cho mục đích portfolio** (quyết định của chủ dự án, 2026-08-12).
+  Nguyên nhân stockout cao **đã được kiểm chứng** (thay cho giả thuyết "do trend" ghi trước đây): reorder point
+  (BR-007) chỉ phủ nhu cầu trong lead time 2–7 ngày, trong khi hệ thống chỉ review mỗi 7 ngày — 80% số
+  key có reorder point thấp hơn nhu cầu 1 tuần (trung vị 51%). Key có tồn kho nằm giữa reorder point và nhu
+  cầu 1 tuần không được đặt hàng nhưng hết hàng ngay trong tuần. Hướng sửa (chưa làm): ngưỡng kích hoạt
+  theo chu kỳ review = nhu cầu TB × (lead time + 7) + z·σ·√(lead time + 7).
+- **GA vs Rule-Based:** GA (repair ràng buộc, seed bằng nghiệm rule-based, chi phí thiếu hàng = biên lợi nhuận)
+  không tệ hơn rule-based theo hàm mục tiêu của nó, và **giảm một nửa chi phí vận chuyển ở kịch bản uniform**
+  bằng cách bỏ những chuyến liên tỉnh/chuyến nhỏ mà phí tuyến lớn hơn biên lợi nhuận số hàng bù được. Ở kịch
+  bản regional (chỉ tuyến nội thành, phí rẻ) gần như mọi chuyến đều đáng chạy nên hai thuật toán gần như
+  trùng nhau. GA **không cải thiện được stockout/excess** vì cả hai thuật toán đều chỉ bù đến reorder point (vốn
+  thấp hơn nhu cầu 1 tuần, xem trên), nên chuyển hàng ngang gần như không đổi được việc hết hàng trong tuần.
 
 ## 13. Open Questions
 
