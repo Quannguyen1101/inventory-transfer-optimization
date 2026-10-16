@@ -90,6 +90,29 @@ def test_transfers_conserve_total_system_stock(algorithm):
     assert total_after == 202
 
 
+def test_ga_weighs_route_cost_against_lost_margin_while_rule_based_does_not():
+    # reorder point = 10 đv/ngày x 2 ngày lead time = 20; tồn 18 -> thiếu 2 đv x biên 10.000đ = 20.000đ
+    # < phí tuyến 50.000đ: GA bỏ chuyến, rule-based vẫn chạy.
+    history = pd.Series([10.0] * 30)
+
+    def run(algorithm):
+        batches = {
+            (1, 10): [Batch("B1", 1, 10, quantity=18, expiry_date=date(2026, 6, 1))],
+            (2, 10): [Batch("B2", 2, 10, quantity=200, expiry_date=date(2026, 6, 1))],
+        }
+        return run_week(
+            week_index=1, current_date=date(2026, 1, 5), scenario="optimized", algorithm=algorithm,
+            batches=batches, sales_history={(1, 10): history, (2, 10): history}, actual_demand_this_week={},
+            product_attrs=_product_attrs(), distance_km={(2, 1): 10.0}, transport_cost_matrix={(2, 1): 50_000.0},
+            delivery_schedule={(2, 1): ["Mon"]},
+            vehicle_capacity_kg=500.0, vehicle_capacity_m3=2.0, min_shelf_life_days=7,
+            min_inventory_days=7.0, max_inventory_days=30.0,
+        )
+
+    assert len(run("rule_based").transfer_lines) == 1
+    assert run("ga").transfer_lines == []
+
+
 def test_deficit_below_threshold_after_sales_triggers_pending_replenishment():
     history = pd.Series([10.0] * 30)
     batches = {(1, 10): [Batch("B1", 1, 10, quantity=5, expiry_date=date(2026, 6, 1))]}

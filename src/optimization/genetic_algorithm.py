@@ -2,7 +2,11 @@
 
 Ràng buộc được xử lý bằng repair khi giải mã gen (không dùng hàm phạt): mọi bộ gen đều cho ra kế hoạch
 khả thi — không rút quá lô hàng / quá phần dư của cửa hàng nguồn, không giao quá nhu cầu của cửa hàng
-thiếu, không vượt sức chứa xe mỗi tuyến. Hàm mục tiêu = chi phí tuyến vận chuyển + phạt thiếu hàng.
+thiếu, không vượt sức chứa xe mỗi tuyến. Hàm mục tiêu = chi phí tuyến vận chuyển + chi phí thiếu hàng
+(số đơn vị còn thiếu so với reorder point x chi phí thiếu hàng/đơn vị của sản phẩm).
+
+Quần thể có thể được seed bằng một kế hoạch có sẵn (vd. nghiệm rule-based); nhờ elitism, kết quả không
+bao giờ tệ hơn kế hoạch seed theo chính hàm mục tiêu này.
 """
 import math
 from collections import defaultdict
@@ -16,7 +20,7 @@ from src.optimization.constraints import (
     CAPACITY_EPS, Batch, TransferConstraints, TransferLine, filter_eligible_batches,
 )
 
-_DEFICIT_PENALTY_PER_UNIT = 100_000.0
+_DEFAULT_SHORTAGE_COST_PER_UNIT = 100_000.0
 
 
 @dataclass
@@ -106,15 +110,27 @@ def _decode(genes: np.ndarray, candidates: list[_Candidate], limits: _Limits) ->
     return lines
 
 
-def _fitness(lines: list[TransferLine], limits: _Limits, transport_cost: dict[tuple[int, int], float]) -> float:
+def _fitness(lines: list[TransferLine], limits: _Limits, transport_cost: dict[tuple[int, int], float],
+             shortage_cost_per_unit: dict[int, float]) -> float:
     routes_used = {(l.from_store_id, l.to_store_id) for l in lines}
     cost = sum(transport_cost.get(route, 0.0) for route in routes_used)
 
     delivered: dict[tuple[int, int], float] = defaultdict(float)
     for line in lines:
         delivered[(line.to_store_id, line.product_id)] += line.quantity
-    shortage = sum(need - delivered[key] for key, need in limits.need.items())
-    return cost + shortage * _DEFICIT_PENALTY_PER_UNIT
+    shortage_cost = sum(
+        (need - delivered[key]) * shortage_cost_per_unit.get(key[1], _DEFAULT_SHORTAGE_COST_PER_UNIT)
+        for key, need in limits.need.items()
+    )
+    return cost + shortage_cost
+
+
+def _encode(plan: list[TransferLine], candidates: list[_Candidate]) -> np.ndarray:
+    index = {(c.from_store_id, c.to_store_id, c.product_id, c.batch_id): i for i, c in enumerate(candidates)}
+    genes = np.zeros(len(candidates))
+    for line in plan:
+        genes[index[(line.from_store_id, line.to_store_id, line.product_id, line.batch_id)]] += line.quantity
+    return genes
 
 
 def _apply_to_sources(lines: list[TransferLine], batches_by_store_product: dict[tuple[int, int], list[Batch]],
@@ -143,9 +159,12 @@ def _crossover(parent_a: np.ndarray, parent_b: np.ndarray, rng: np.random.Genera
 
 def _mutate(genes: np.ndarray, max_quantities: np.ndarray, rng: np.random.Generator,
             mutation_rate: float = 0.1) -> np.ndarray:
+    """Gen bị đột biến: một nửa nhận số lượng ngẫu nhiên mới, một nửa về 0 — cho phép bỏ hẳn một tuyến
+    (tiết kiệm phí tuyến), điều mà đột biến đồng đều trong [0, max] gần như không bao giờ làm được."""
     mutated = genes.copy()
     mask = rng.random(len(genes)) < mutation_rate
     mutated[mask] = rng.uniform(0, max_quantities[mask])
+    mutated[mask & (rng.random(len(genes)) < 0.5)] = 0.0
     return mutated
 
 
@@ -160,21 +179,28 @@ def plan_transfers_ga(
     population_size: int = 60,
     generations: int = 150,
     seed: int = 42,
+    seed_plan: list[TransferLine] | None = None,
+    shortage_cost_per_unit: dict[int, float] | None = None,
 ) -> list[TransferLine]:
     """Trừ số lượng đã chuyển khỏi Batch.quantity và StockPosition.current_stock của nguồn (giống
-    rule_based) — caller phải truyền bản sao riêng cho mỗi tuần."""
+    rule_based) — caller phải truyền bản sao riêng cho mỗi tuần. `shortage_cost_per_unit` theo
+    product_id (mặc định 100.000đ/đv); `seed_plan` phải được lập trên cùng tồn kho, chưa bị trừ."""
     rng = np.random.default_rng(seed)
     candidates = _build_candidates(deficits, surpluses, batches_by_store_product, product_attrs,
                                     constraints, current_date)
     if not candidates:
         return []
     limits = _build_limits(deficits, surpluses, batches_by_store_product, constraints)
+    shortage_cost_per_unit = shortage_cost_per_unit or {}
 
     max_quantities = np.array([c.max_quantity for c in candidates])
-    population = rng.uniform(0, max_quantities, size=(population_size, len(candidates)))
+    shape = (population_size, len(candidates))
+    population = rng.uniform(0, max_quantities, size=shape) * (rng.random(shape) < 0.5)  # khởi tạo thưa
+    if seed_plan:
+        population[0] = _encode(seed_plan, candidates)
 
     def fitness_of(genes: np.ndarray) -> float:
-        return _fitness(_decode(genes, candidates, limits), limits, transport_cost)
+        return _fitness(_decode(genes, candidates, limits), limits, transport_cost, shortage_cost_per_unit)
 
     best_genes = population[0]
     best_fitness = fitness_of(best_genes)

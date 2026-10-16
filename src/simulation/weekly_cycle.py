@@ -1,4 +1,5 @@
 """UC-002 — thực thi một chu kỳ (tuần) trong rolling simulation."""
+import copy
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Literal
@@ -96,8 +97,15 @@ def run_week(
             transfer_lines = plan_transfers_rule_based(deficits, surpluses, batches, distance_km,
                                                          product_weight_volume, constraints, current_date)
         else:
+            # Seed GA bằng nghiệm rule-based (lập trên bản sao vì rule-based trừ thẳng vào tồn kho nguồn);
+            # chi phí thiếu hàng/đơn vị = biên lợi nhuận của sản phẩm.
+            seed_plan = plan_transfers_rule_based(copy.deepcopy(deficits), copy.deepcopy(surpluses),
+                                                  copy.deepcopy(batches), distance_km, product_weight_volume,
+                                                  constraints, current_date)
+            margin = {pid: a["price"] - a["cost"] for pid, a in product_attrs.items()}
             transfer_lines = plan_transfers_ga(deficits, surpluses, batches, transport_cost_matrix,
-                                                product_weight_volume, constraints, current_date, seed=ga_seed)
+                                                product_weight_volume, constraints, current_date, seed=ga_seed,
+                                                seed_plan=seed_plan, shortage_cost_per_unit=margin)
 
     # Bước 5: áp dụng kế hoạch chuyển hàng và hàng bổ sung từ NCC (BR-025, đặt tuần trước) vào tồn kho
     updated_batches = {key: list(blist) for key, blist in batches.items()}
