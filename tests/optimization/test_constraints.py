@@ -43,3 +43,20 @@ def test_is_feasible_respects_vehicle_capacity():
     over_lines = [TransferLine(1, 2, 1, "B1", quantity=1, weight_kg=11.0, volume_l=2.0)]
     assert is_feasible(ok_lines, constraints) is True
     assert is_feasible(over_lines, constraints) is False
+
+
+def test_is_feasible_compares_liters_against_capacity_in_m3():
+    # volume_l của sản phẩm tính bằng lít; sức chứa xe khai báo bằng m3 (2 m3 = 2000 lít)
+    constraints = TransferConstraints(vehicle_capacity_kg=500.0, vehicle_capacity_m3=2.0,
+                                       delivery_schedule={}, min_shelf_life_days=7)
+    within = [TransferLine(1, 2, 1, "B1", quantity=50, weight_kg=50.0, volume_l=1500.0)]
+    over = [TransferLine(1, 2, 1, "B1", quantity=50, weight_kg=50.0, volume_l=2500.0)]
+    assert is_feasible(within, constraints) is True
+    assert is_feasible(over, constraints) is False
+
+
+def test_is_feasible_tolerates_float_rounding_at_exact_capacity():
+    constraints = TransferConstraints(vehicle_capacity_kg=0.3, vehicle_capacity_m3=2.0,
+                                       delivery_schedule={}, min_shelf_life_days=7)
+    lines = [TransferLine(1, 2, 1, f"B{i}", quantity=1, weight_kg=0.1, volume_l=0.1) for i in range(3)]
+    assert is_feasible(lines, constraints) is True  # 0.1 * 3 = 0.30000000000000004

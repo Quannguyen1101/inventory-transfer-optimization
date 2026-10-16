@@ -1,9 +1,10 @@
 """BR-015 — rule-based greedy transfer planning, tôn trọng ràng buộc chung (constraints.py)."""
+import math
 from datetime import date
 
 from src.inventory_policy.classifier import StockPosition
 from src.optimization.constraints import (
-    Batch, TransferConstraints, TransferLine, filter_eligible_batches, is_feasible,
+    CAPACITY_EPS, Batch, TransferConstraints, TransferLine, filter_eligible_batches, is_feasible,
 )
 
 
@@ -47,20 +48,20 @@ def plan_transfers_rule_based(
             for batch in eligible_batches:
                 if remaining_need <= 0:
                     break
-                available_in_batch = min(batch.quantity, surplus.current_stock - surplus.reorder_point)
+                available_in_batch = math.floor(min(batch.quantity, surplus.current_stock - surplus.reorder_point))
                 if available_in_batch <= 0:
                     continue
-                take_qty = min(remaining_need, available_in_batch)
+                take_qty = min(math.ceil(remaining_need), available_in_batch)
 
                 added_weight = take_qty * weight_per_unit
                 added_volume = take_qty * volume_per_unit
                 if (used_weight + added_weight > constraints.vehicle_capacity_kg
-                        or used_volume + added_volume > constraints.vehicle_capacity_m3):
+                        or used_volume + added_volume > constraints.vehicle_capacity_l):
                     remaining_weight_cap = constraints.vehicle_capacity_kg - used_weight
-                    remaining_volume_cap = constraints.vehicle_capacity_m3 - used_volume
+                    remaining_volume_cap = constraints.vehicle_capacity_l - used_volume
                     max_by_weight = remaining_weight_cap / weight_per_unit if weight_per_unit > 0 else take_qty
                     max_by_volume = remaining_volume_cap / volume_per_unit if volume_per_unit > 0 else take_qty
-                    take_qty = max(0, min(take_qty, max_by_weight, max_by_volume))
+                    take_qty = max(0, math.floor(min(take_qty, max_by_weight, max_by_volume) + CAPACITY_EPS))
                     if take_qty <= 0:
                         continue
                     added_weight = take_qty * weight_per_unit

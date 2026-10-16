@@ -20,6 +20,15 @@ class TransferConstraints:
     delivery_schedule: dict[tuple[int, int], list[str]]
     min_shelf_life_days: int
 
+    @property
+    def vehicle_capacity_l(self) -> float:
+        """Thể tích sản phẩm (volume_l) tính bằng lít — mọi phép so sánh thể tích dùng đơn vị này."""
+        return self.vehicle_capacity_m3 * 1000.0
+
+
+# Dung sai cho sai số làm tròn float khi cộng dồn trọng lượng/thể tích trên một tuyến
+CAPACITY_EPS = 1e-6
+
 
 @dataclass
 class TransferLine:
@@ -58,6 +67,7 @@ def route_totals(transfer_lines: list[TransferLine]) -> dict[tuple[int, int], tu
 def is_feasible(transfer_lines: list[TransferLine], constraints: TransferConstraints) -> bool:
     """BR-010."""
     for weight_kg, volume_l in route_totals(transfer_lines).values():
-        if weight_kg > constraints.vehicle_capacity_kg or volume_l > constraints.vehicle_capacity_m3:
+        if (weight_kg > constraints.vehicle_capacity_kg + CAPACITY_EPS
+                or volume_l > constraints.vehicle_capacity_l + CAPACITY_EPS):
             return False
     return True
